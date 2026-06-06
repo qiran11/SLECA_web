@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Plot from 'react-plotly.js';
 import { SlidersHorizontal } from 'lucide-react';
 import type { CellRecord } from '../types/cell';
@@ -94,7 +94,15 @@ export function UmapViewer({
       <div className="relative min-h-[520px] flex-1">
         {loading && <CenterNote>Loading cells...</CenterNote>}
         {!loading && cells.length === 0 && <CenterNote>No cells match the current filters.</CenterNote>}
-        {!loading && cells.length > 0 && (
+        {!loading && cells.length > 0 && denseMode && (
+          <DenseUmapCanvas
+            cells={plotData.valid}
+            pointSize={pointSize}
+            opacity={opacity}
+            onSelectCell={onSelectCell}
+          />
+        )}
+        {!loading && cells.length > 0 && !denseMode && (
           <Plot
             data={[plotData.trace]}
             layout={{
@@ -149,6 +157,209 @@ function Control({
 
 function CenterNote({ children }: { children: string }) {
   return <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">{children}</div>;
+}
+
+function DenseUmapCanvas({
+  cells,
+  pointSize,
+  opacity,
+  onSelectCell,
+}: {
+  cells: CellRecord[];
+  pointSize: number;
+  opacity: number;
+  onSelectCell: (cell: CellRecord) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 });
+  const viewRef = useRef(view);
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+
+  const pointData = useMemo(() => {
+    const xs = cells.map((cell) => numericValue(cell.UMAP_1)).filter((value): value is number => value !== null);
+    const ys = cells.map((cell) => numericValue(cell.UMAP_2)).filter((value): value is number => value !== null);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const scaleX = maxX - minX || 1;
+    const scaleY = maxY - minY || 1;
+    const positions = new Float32Array(cells.length * 2);
+
+    cells.forEach((cell, index) => {
+      const x = numericValue(cell.UMAP_1) ?? minX;
+      const y = numericValue(cell.UMAP_2) ?? minY;
+      positions[index * 2] = ((x - minX) / scaleX) * 2 - 1;
+      positions[index * 2 + 1] = -(((y - minY) / scaleY) * 2 - 1);
+    });
+
+    return { positions, count: cells.length };
+  }, [cells]);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const gl = canvas.getContext('webgl', { antialias: false, preserveDrawingBuffer: false });
+    if (!gl) return;
+
+    const program = createProgram(gl);
+    const positionLocation = gl.getAttribLocation(program, 'a_position');
+    const zoomLocation = gl.getUniformLocation(program, 'u_zoom');
+    const panLocation = gl.getUniformLocation(program, 'u_pan');
+    const sizeLocation = gl.getUniformLocation(program, 'u_pointSize');
+    const opacityLocation = gl.getUniformLocation(program, 'u_opacity');
+    const buffer = gl.createBuffer();
+
+    const render = () => {
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(rect.width * window.devicePixelRatio));
+      const height = Math.max(1, Math.floor(rect.height * window.devicePixelRatio));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0.972, 0.98, 0.976, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, pointData.positions, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(positionLocation);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform1f(zoomLocation, viewRef.current.zoom);
+      gl.uniform2f(panLocation, viewRef.current.panX, viewRef.current.panY);
+      gl.uniform1f(sizeLocation, pointSize * window.devicePixelRatio);
+      gl.uniform1f(opacityLocation, opacity);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.drawArrays(gl.POINTS, 0, pointData.count);
+    };
+
+    render();
+    const observer = new ResizeObserver(render);
+    observer.observe(canvas);
+    return () => {
+      observer.disconnect();
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
+    };
+  }, [opacity, pointData, pointSize, view]);
+
+  const toClip = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      y: ((event.clientY - rect.top) / rect.height) * -2 + 1,
+    };
+  };
+
+  const selectNearest = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const clip = toClip(event);
+    const targetX = (clip.x - viewRef.current.panX) / viewRef.current.zoom;
+    const targetY = (clip.y - viewRef.current.panY) / viewRef.current.zoom;
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    const threshold = 0.0008 / Math.max(viewRef.current.zoom, 0.5);
+
+    for (let index = 0; index < pointData.count; index += 1) {
+      const dx = pointData.positions[index * 2] - targetX;
+      const dy = pointData.positions[index * 2 + 1] - targetY;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+
+    if (bestIndex >= 0 && bestDistance < threshold) onSelectCell(cells[bestIndex]);
+  };
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="h-full w-full cursor-crosshair"
+      onMouseDown={(event) => {
+        dragRef.current = { x: event.clientX, y: event.clientY };
+      }}
+      onMouseMove={(event) => {
+        if (!dragRef.current) return;
+        const dx = ((event.clientX - dragRef.current.x) / event.currentTarget.clientWidth) * 2;
+        const dy = -((event.clientY - dragRef.current.y) / event.currentTarget.clientHeight) * 2;
+        dragRef.current = { x: event.clientX, y: event.clientY };
+        setView((current) => ({ ...current, panX: current.panX + dx, panY: current.panY + dy }));
+      }}
+      onMouseUp={() => {
+        dragRef.current = null;
+      }}
+      onMouseLeave={() => {
+        dragRef.current = null;
+      }}
+      onClick={selectNearest}
+      onWheel={(event) => {
+        event.preventDefault();
+        const factor = event.deltaY < 0 ? 1.15 : 0.87;
+        setView((current) => ({ ...current, zoom: Math.max(0.25, Math.min(40, current.zoom * factor)) }));
+      }}
+    />
+  );
+}
+
+function createProgram(gl: WebGLRenderingContext) {
+  const vertexShader = compileShader(
+    gl,
+    gl.VERTEX_SHADER,
+    `
+      attribute vec2 a_position;
+      uniform float u_zoom;
+      uniform vec2 u_pan;
+      uniform float u_pointSize;
+      void main() {
+        gl_Position = vec4(a_position * u_zoom + u_pan, 0.0, 1.0);
+        gl_PointSize = u_pointSize;
+      }
+    `,
+  );
+  const fragmentShader = compileShader(
+    gl,
+    gl.FRAGMENT_SHADER,
+    `
+      precision mediump float;
+      uniform float u_opacity;
+      void main() {
+        vec2 center = gl_PointCoord - vec2(0.5);
+        if (dot(center, center) > 0.25) discard;
+        gl_FragColor = vec4(0.02, 0.03, 0.04, u_opacity);
+      }
+    `,
+  );
+  const program = gl.createProgram();
+  if (!program) throw new Error('Could not create WebGL program');
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) ?? 'Could not link WebGL program');
+  }
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  return program;
+}
+
+function compileShader(gl: WebGLRenderingContext, type: number, source: string) {
+  const shader = gl.createShader(type);
+  if (!shader) throw new Error('Could not create WebGL shader');
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(shader) ?? 'Could not compile WebGL shader');
+  }
+  return shader;
 }
 
 function tooltipText(cell: CellRecord, aliases: Map<string, string>) {

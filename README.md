@@ -77,7 +77,7 @@ The production path uses FastAPI plus pandas/pyarrow to read parquet server-side
 
 For performance, `/api/cells/query` returns a lightweight row shape for UMAP rendering rather than every metadata column. A clicked cell's full metadata is loaded on demand from `/api/cells/{cell_id}`.
 
-`Million batched` is an experimental dense UMAP mode. It requests only `cell_id`, `UMAP_1`, and `UMAP_2` in 50k-row chunks and appends black points progressively up to 1,000,000 rendered points. It is intended for inspecting the global UMAP shape; color, hover richness, dashboards, and sidebar summaries remain better suited to the 100k/300k modes.
+`Million batched` is an experimental dense UMAP mode. It requests only `cell_id`, `UMAP_1`, and `UMAP_2` in 50k-row chunks and renders black points with a native WebGL canvas instead of Plotly. It progressively appends up to 1,000,000 rendered points and is intended for inspecting the global UMAP shape; color, hover richness, dashboards, and sidebar summaries remain better suited to the 100k/300k modes.
 
 ## Privacy Defaults
 
