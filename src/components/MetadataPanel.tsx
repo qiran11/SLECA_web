@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { CellRecord } from '../types/cell';
+import type { CellRecord, FilterSummary } from '../types/cell';
 import { histogram, numericSummary, overviewStats, formatNumber } from '../data/statistics';
 import { safeMetadataEntries, topValues } from '../data/transformData';
 import { patientAlias } from '../utils/anonymize';
@@ -10,10 +10,11 @@ type MetadataPanelProps = {
   selectedCell: CellRecord | null;
   cells: CellRecord[];
   aliases: Map<string, string>;
+  summary?: FilterSummary | null;
   onClearSelected: () => void;
 };
 
-export function MetadataPanel({ selectedCell, cells, aliases, onClearSelected }: MetadataPanelProps) {
+export function MetadataPanel({ selectedCell, cells, aliases, summary, onClearSelected }: MetadataPanelProps) {
   if (selectedCell) {
     const alias = patientAlias(selectedCell, aliases);
     return (
@@ -40,7 +41,13 @@ export function MetadataPanel({ selectedCell, cells, aliases, onClearSelected }:
     );
   }
 
-  const stats = overviewStats(cells);
+  const stats = summary
+    ? {
+        cells: summary.filtered_rows,
+        samples: summary.unique.sample ?? 0,
+        patients: summary.unique.Patient_ID || summary.unique.Participant || 0,
+      }
+    : overviewStats(cells);
   const qcFields = ['pct_counts_mt', 'total_counts', 'n_genes_by_counts'];
 
   return (
@@ -56,22 +63,24 @@ export function MetadataPanel({ selectedCell, cells, aliases, onClearSelected }:
         <SmallMetric label="Patients" value={stats.patients} />
       </div>
 
-      <MiniBars title="Cell Types Top 10" data={topValues(cells, 'cell_type_merge', 10)} />
-      <MiniBars title="Group Distribution" data={topValues(cells, 'group', 8)} />
-      <MiniBars title="Dataset Distribution" data={topValues(cells, 'dataset', 8)} />
-      <MiniHistogram title="SLEDAI" cells={cells} field="SLEDAI" />
-      <MiniHistogram title="Age" cells={cells} field="Age" />
-      <MiniHistogram title="mCLASI Activity" cells={cells} field="mCLASI_activity" />
+      <MiniBars title="Cell Types Top 10" data={(summary?.categorical.cell_type_merge ?? topValues(cells, 'cell_type_merge', 10)).slice(0, 10)} />
+      <MiniBars title="Group Distribution" data={(summary?.categorical.group ?? topValues(cells, 'group', 8)).slice(0, 8)} />
+      <MiniBars title="Dataset Distribution" data={(summary?.categorical.dataset ?? topValues(cells, 'dataset', 8)).slice(0, 8)} />
+      <MiniHistogram title="SLEDAI" cells={cells} field="SLEDAI" bins={summary?.numeric.SLEDAI?.bins} />
+      <MiniHistogram title="Age" cells={cells} field="Age" bins={summary?.numeric.Age?.bins} />
+      <MiniHistogram title="mCLASI Activity" cells={cells} field="mCLASI_activity" bins={summary?.numeric.mCLASI_activity?.bins} />
 
       <ChartCard title="QC Summary" dense>
         <div className="space-y-2">
           {qcFields.map((field) => {
-            const summary = numericSummary(cells, field);
+            const fieldSummary = summary?.numeric[field] ?? numericSummary(cells, field);
             return (
               <div key={field} className="rounded bg-panel p-2 text-xs">
                 <span className="font-medium">{field}</span>
                 <span className="ml-2 text-slate-600">
-                  {summary ? `min ${formatNumber(summary.min)} / mean ${formatNumber(summary.mean)} / max ${formatNumber(summary.max)}` : 'No numeric data'}
+                  {fieldSummary
+                    ? `min ${formatNumber(fieldSummary.min)} / mean ${formatNumber(fieldSummary.mean)} / max ${formatNumber(fieldSummary.max)}`
+                    : 'No numeric data'}
                 </span>
               </div>
             );
@@ -109,8 +118,18 @@ function MiniBars({ title, data }: { title: string; data: Array<{ label: string;
   );
 }
 
-function MiniHistogram({ title, cells, field }: { title: string; cells: CellRecord[]; field: string }) {
-  const data = histogram(cells, field, 10);
+function MiniHistogram({
+  title,
+  cells,
+  field,
+  bins,
+}: {
+  title: string;
+  cells: CellRecord[];
+  field: string;
+  bins?: Array<{ label: string; min: number; max: number; count: number }>;
+}) {
+  const data = bins ?? histogram(cells, field, 10);
   if (!data.length) return null;
   return (
     <ChartCard title={title} dense>

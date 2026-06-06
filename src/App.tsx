@@ -305,6 +305,7 @@ export default function App() {
               selectedCell={selectedCell}
               cells={filteredCells}
               aliases={patientAliases}
+              summary={samplingMode === 'million' ? filterSummary : null}
               onClearSelected={() => setSelectedCell(null)}
             />
           }

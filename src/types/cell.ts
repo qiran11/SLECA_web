@@ -79,6 +79,7 @@ export type DenseUmapData = {
 export type FilterSummary = {
   total_rows: number;
   filtered_rows: number;
+  unique: Record<string, number>;
   categorical: Record<string, CategoryCount[]>;
   numeric: Record<
     string,

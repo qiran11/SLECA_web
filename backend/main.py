@@ -227,6 +227,11 @@ def filter_summary(request: QueryRequest) -> dict[str, Any]:
     return {
         "total_rows": int(len(df)),
         "filtered_rows": int(len(filtered)),
+        "unique": {
+            "sample": int(filtered["sample"].dropna().nunique()) if "sample" in filtered.columns else 0,
+            "Patient_ID": int(filtered["Patient_ID"].dropna().nunique()) if "Patient_ID" in filtered.columns else 0,
+            "Participant": int(filtered["Participant"].dropna().nunique()) if "Participant" in filtered.columns else 0,
+        },
         "categorical": categorical,
         "numeric": numeric,
     }
