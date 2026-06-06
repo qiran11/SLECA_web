@@ -64,12 +64,29 @@ export type DenseUmapChunkResponse = {
   x: number[];
   y: number[];
   cell_id: Array<string | number | null>;
+  color?: Array<string | number | null>;
 };
 
 export type DenseUmapData = {
   positions: Float32Array;
+  colors: Float32Array;
   cellIds: Array<string | number | null>;
   loaded: number;
   target: number;
   totalFiltered: number;
+};
+
+export type FilterSummary = {
+  total_rows: number;
+  filtered_rows: number;
+  categorical: Record<string, CategoryCount[]>;
+  numeric: Record<
+    string,
+    {
+      min: number;
+      max: number;
+      mean: number;
+      bins: HistogramBin[];
+    }
+  >;
 };

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -33,6 +34,32 @@ LIGHT_COLUMNS = [
     "n_genes_by_counts",
     "doublet_scores",
 ]
+CATEGORICAL_FIELDS = [
+    "group",
+    "dataset",
+    "batch",
+    "sample",
+    "sex",
+    "Status",
+    "cell_type_merge",
+    "cell_type_major_n",
+    "cell_type_clean",
+    "clusters",
+    "louvain",
+]
+NUMERIC_FIELDS = [
+    "Age",
+    "age",
+    "SLEDAI",
+    "SELENA-SLEDAI",
+    "Years Since Diagnosis",
+    "mCLASI_activity",
+    "mCLASI_damage",
+    "n_genes_by_counts",
+    "total_counts",
+    "pct_counts_mt",
+    "doublet_scores",
+]
 
 
 class NumericRange(BaseModel):
@@ -53,6 +80,7 @@ class DenseUmapRequest(BaseModel):
     numeric: dict[str, NumericRange] = Field(default_factory=dict)
     limit: int = 50_000
     offset: int = 0
+    color_by: str | None = None
 
 
 app = FastAPI(
@@ -142,6 +170,10 @@ def dense_umap(request: DenseUmapRequest) -> dict[str, Any]:
     norm_x = ((x - min_x) / scale_x) * 2 - 1
     norm_y = -(((y - min_y) / scale_y) * 2 - 1)
     cell_ids = valid_chunk["cell_id"].where(pd.notna(valid_chunk["cell_id"]), None).tolist() if "cell_id" in valid_chunk.columns else []
+    color_values = []
+    if request.color_by and request.color_by in valid_chunk.columns:
+        color_series = valid_chunk.loc[valid, request.color_by].where(pd.notna(valid_chunk.loc[valid, request.color_by]), UNKNOWN)
+        color_values = color_series.tolist()
 
     return {
         "source": PARQUET_PATH.name,
@@ -152,6 +184,51 @@ def dense_umap(request: DenseUmapRequest) -> dict[str, Any]:
         "x": norm_x.astype(float).tolist(),
         "y": norm_y.astype(float).tolist(),
         "cell_id": cell_ids,
+        "color": color_values,
+    }
+
+
+@app.post("/api/filters/summary")
+def filter_summary(request: QueryRequest) -> dict[str, Any]:
+    df = data_frame()
+    mask = build_filter_mask(df, request)
+    filtered = df.loc[mask]
+
+    categorical = {}
+    for field in CATEGORICAL_FIELDS:
+        if field not in filtered.columns:
+            continue
+        counts = filtered[field].astype("string").fillna(UNKNOWN).value_counts(dropna=False).head(200)
+        categorical[field] = [{"label": str(label), "count": int(count)} for label, count in counts.items()]
+
+    numeric = {}
+    for field in NUMERIC_FIELDS:
+        if field not in filtered.columns:
+            continue
+        series = pd.to_numeric(filtered[field], errors="coerce").dropna()
+        if series.empty:
+            continue
+        hist_counts, bin_edges = np.histogram(series.to_numpy(), bins=18)
+        numeric[field] = {
+            "min": float(series.min()),
+            "max": float(series.max()),
+            "mean": float(series.mean()),
+            "bins": [
+                {
+                    "label": f"{bin_edges[index]:.2f}-{bin_edges[index + 1]:.2f}",
+                    "min": float(bin_edges[index]),
+                    "max": float(bin_edges[index + 1]),
+                    "count": int(hist_counts[index]),
+                }
+                for index in range(len(hist_counts))
+            ],
+        }
+
+    return {
+        "total_rows": int(len(df)),
+        "filtered_rows": int(len(filtered)),
+        "categorical": categorical,
+        "numeric": numeric,
     }
 
 

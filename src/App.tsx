@@ -9,11 +9,12 @@ import { OverviewDashboard } from './components/OverviewDashboard';
 import { ClinicalDashboard } from './components/ClinicalDashboard';
 import { CellTypeBrowser } from './components/CellTypeBrowser';
 import { SamplePatientSummary } from './components/SamplePatientSummary';
-import { DATA_SOURCES, getDataSource, loadCellMetadata, loadCells, queryDenseUmapChunk, queryParquetCells } from './data/loadData';
+import { DATA_SOURCES, getDataSource, loadCellMetadata, loadCells, queryDenseUmapChunk, queryFilterSummary, queryParquetCells } from './data/loadData';
 import { COLOR_FIELDS, applyFilters, emptyFilters, sampleCells } from './data/filters';
 import { availableFields } from './data/transformData';
 import { buildPatientAliases } from './utils/anonymize';
-import type { CellRecord, DataSourceKey, DenseUmapData, FilterState, SamplingMode, SelectedCell } from './types/cell';
+import { colorFor } from './utils/colors';
+import type { CellRecord, DataSourceKey, DenseUmapData, FilterState, FilterSummary, SamplingMode, SelectedCell } from './types/cell';
 
 type Page = 'browser' | 'overview' | 'clinical' | 'cellTypes' | 'samples';
 
@@ -35,6 +36,16 @@ function samplingLimit(mode: SamplingMode): number {
   return 100000;
 }
 
+function denseColor(value: unknown): [number, number, number] {
+  if (value === null || value === undefined || value === '') return [0.07, 0.09, 0.11];
+  const hex = colorFor(String(value));
+  return [
+    Number.parseInt(hex.slice(1, 3), 16) / 255,
+    Number.parseInt(hex.slice(3, 5), 16) / 255,
+    Number.parseInt(hex.slice(5, 7), 16) / 255,
+  ];
+}
+
 export default function App() {
   const [cells, setCells] = useState<CellRecord[]>([]);
   const [sourceKey, setSourceKey] = useState<DataSourceKey>('parquet');
@@ -51,6 +62,7 @@ export default function App() {
   const [serverFilteredRows, setServerFilteredRows] = useState<number | null>(null);
   const [batchProgress, setBatchProgress] = useState<{ loaded: number; target: number } | null>(null);
   const [denseData, setDenseData] = useState<DenseUmapData | null>(null);
+  const [filterSummary, setFilterSummary] = useState<FilterSummary | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -59,6 +71,7 @@ export default function App() {
     setSelectedCell(null);
     setBatchProgress(null);
     setDenseData(null);
+    setFilterSummary(null);
 
     if (sourceKey === 'parquet') return;
 
@@ -70,6 +83,7 @@ export default function App() {
           setServerFilteredRows(null);
           setBatchProgress(null);
           setDenseData(null);
+          setFilterSummary(null);
           setFilters(emptyFilters());
           setSamplingMode(sourceKey === 'preview' ? 'preview' : 'sample100k');
         }
@@ -103,10 +117,17 @@ export default function App() {
         let loaded = 0;
         const target = samplingLimit(samplingMode);
         const positions = new Float32Array(target * 2);
+        const colors = new Float32Array(target * 3);
         const cellIds: Array<string | number | null> = new Array(target);
+        const summary = await queryFilterSummary(filters);
+        if (!ignore) {
+          setFilterSummary(summary);
+          setServerTotalRows(summary.total_rows);
+          setServerFilteredRows(summary.filtered_rows);
+        }
 
         while (!ignore && offset < target) {
-          const response = await queryDenseUmapChunk(filters, MILLION_CHUNK_SIZE, offset);
+          const response = await queryDenseUmapChunk(filters, MILLION_CHUNK_SIZE, offset, colorBy);
           const writable = Math.min(response.returned_rows, target - loaded);
 
           setServerTotalRows(response.total_rows);
@@ -115,12 +136,16 @@ export default function App() {
           for (let index = 0; index < writable; index += 1) {
             positions[(loaded + index) * 2] = response.x[index];
             positions[(loaded + index) * 2 + 1] = response.y[index];
+            const rgb = denseColor(response.color?.[index]);
+            colors[(loaded + index) * 3] = rgb[0];
+            colors[(loaded + index) * 3 + 1] = rgb[1];
+            colors[(loaded + index) * 3 + 2] = rgb[2];
             cellIds[loaded + index] = response.cell_id[index];
           }
 
           loaded += writable;
           const progressTarget = Math.min(target, response.filtered_rows);
-          setDenseData({ positions, cellIds, loaded, target: progressTarget, totalFiltered: response.filtered_rows });
+          setDenseData({ positions, colors, cellIds, loaded, target: progressTarget, totalFiltered: response.filtered_rows });
           setBatchProgress({ loaded, target: progressTarget });
           setLoading(false);
 
@@ -148,6 +173,7 @@ export default function App() {
         if (!ignore) {
           setCells(response.rows);
           setDenseData(null);
+          setFilterSummary(null);
           setServerTotalRows(response.total_rows);
           setServerFilteredRows(response.filtered_rows);
           setBatchProgress(null);
@@ -163,7 +189,7 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, [filters, samplingMode, sourceKey]);
+  }, [colorBy, filters, samplingMode, sourceKey]);
 
   const filteredCells = useMemo(() => (sourceKey === 'parquet' ? cells : applyFilters(cells, filters)), [cells, filters, sourceKey]);
   const displayedCells = useMemo(
@@ -171,7 +197,10 @@ export default function App() {
     [filteredCells, samplingMode, sourceKey],
   );
   const patientAliases = useMemo(() => buildPatientAliases(cells), [cells]);
-  const colorFields = useMemo(() => availableFields(cells, COLOR_FIELDS), [cells]);
+  const colorFields = useMemo(
+    () => (sourceKey === 'parquet' && samplingMode === 'million' ? COLOR_FIELDS : availableFields(cells, COLOR_FIELDS)),
+    [cells, samplingMode, sourceKey],
+  );
   const source = getDataSource(sourceKey);
 
   const resetFilters = () => {
@@ -186,6 +215,7 @@ export default function App() {
     setSamplingMode(nextSource === 'preview' ? 'preview' : 'sample100k');
     setBatchProgress(null);
     setDenseData(null);
+    setFilterSummary(null);
   };
 
   const handleSelectCell = (cell: CellRecord) => {
@@ -245,7 +275,13 @@ export default function App() {
       ) : page === 'browser' ? (
         <Layout
           sidebar={
-            <SidebarFilters cells={cells} filters={filters} filteredCells={filteredCells} onFilters={setFilters} />
+            <SidebarFilters
+              cells={cells}
+              filters={filters}
+              filteredCells={filteredCells}
+              summary={samplingMode === 'million' ? filterSummary : null}
+              onFilters={setFilters}
+            />
           }
           main={
             <UmapViewer

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
-import type { CellRecord, FilterState } from '../types/cell';
+import type { CellRecord, FilterState, FilterSummary } from '../types/cell';
 import { CATEGORICAL_FIELDS, NUMERIC_FIELDS, clearField, setNumericRange, toggleCategory } from '../data/filters';
 import { histogram, numericSummary, formatNumber } from '../data/statistics';
 import { availableFields, topValues, valueLabel } from '../data/transformData';
@@ -9,18 +9,26 @@ type SidebarFiltersProps = {
   cells: CellRecord[];
   filteredCells: CellRecord[];
   filters: FilterState;
+  summary?: FilterSummary | null;
   onFilters: (filters: FilterState) => void;
 };
 
-export function SidebarFilters({ cells, filteredCells, filters, onFilters }: SidebarFiltersProps) {
-  const categoricalFields = useMemo(() => availableFields(cells, CATEGORICAL_FIELDS), [cells]);
-  const numericFields = useMemo(() => availableFields(cells, NUMERIC_FIELDS), [cells]);
+export function SidebarFilters({ cells, filteredCells, filters, summary, onFilters }: SidebarFiltersProps) {
+  const categoricalFields = useMemo(
+    () => (summary ? CATEGORICAL_FIELDS.filter((field) => summary.categorical[field]) : availableFields(cells, CATEGORICAL_FIELDS)),
+    [cells, summary],
+  );
+  const numericFields = useMemo(
+    () => (summary ? NUMERIC_FIELDS.filter((field) => summary.numeric[field]) : availableFields(cells, NUMERIC_FIELDS)),
+    [cells, summary],
+  );
+  const filteredCount = summary?.filtered_rows ?? filteredCells.length;
 
   return (
     <div className="p-4">
       <div className="mb-4">
         <div className="text-sm font-semibold">Metadata Filters</div>
-        <div className="mt-1 text-xs text-slate-500">{filteredCells.length.toLocaleString()} cells after filters</div>
+        <div className="mt-1 text-xs text-slate-500">{filteredCount.toLocaleString()} cells after filters</div>
       </div>
 
       <div className="space-y-3">
@@ -29,6 +37,7 @@ export function SidebarFilters({ cells, filteredCells, filters, onFilters }: Sid
             key={field}
             field={field}
             cells={cells}
+            summaryCounts={summary?.categorical[field]}
             selected={filters.categorical[field] ?? new Set()}
             onToggle={(value) => onFilters(toggleCategory(filters, field, value))}
             onClear={() => onFilters(clearField(filters, field))}
@@ -40,6 +49,7 @@ export function SidebarFilters({ cells, filteredCells, filters, onFilters }: Sid
             key={field}
             field={field}
             cells={cells}
+            summaryStats={summary?.numeric[field]}
             current={filters.numeric[field]}
             onRange={(min, max) => onFilters(setNumericRange(filters, field, { min, max }))}
             onClear={() => onFilters(clearField(filters, field))}
@@ -54,18 +64,20 @@ function CategoricalFilter({
   field,
   cells,
   selected,
+  summaryCounts,
   onToggle,
   onClear,
 }: {
   field: string;
   cells: CellRecord[];
   selected: Set<string>;
+  summaryCounts?: Array<{ label: string; count: number }>;
   onToggle: (value: string) => void;
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(['group', 'cell_type_merge', 'dataset'].includes(field));
   const [query, setQuery] = useState('');
-  const counts = useMemo(() => topValues(cells, field, 200), [cells, field]);
+  const counts = useMemo(() => summaryCounts ?? topValues(cells, field, 200), [cells, field, summaryCounts]);
   const max = counts[0]?.count ?? 1;
   const visible = counts.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())).slice(0, 40);
 
@@ -97,18 +109,25 @@ function NumericFilter({
   field,
   cells,
   current,
+  summaryStats,
   onRange,
   onClear,
 }: {
   field: string;
   cells: CellRecord[];
   current?: { min: number; max: number };
+  summaryStats?: {
+    min: number;
+    max: number;
+    mean: number;
+    bins: Array<{ label: string; min: number; max: number; count: number }>;
+  };
   onRange: (min: number, max: number) => void;
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(['Age', 'SLEDAI', 'pct_counts_mt'].includes(field));
-  const stats = useMemo(() => numericSummary(cells, field), [cells, field]);
-  const bins = useMemo(() => histogram(cells, field, 18), [cells, field]);
+  const stats = useMemo(() => summaryStats ?? numericSummary(cells, field), [cells, field, summaryStats]);
+  const bins = useMemo(() => summaryStats?.bins ?? histogram(cells, field, 18), [cells, field, summaryStats]);
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
 
   if (!stats) return null;

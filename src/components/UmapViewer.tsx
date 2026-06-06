@@ -27,7 +27,9 @@ type DenseGlState = {
   gl: WebGLRenderingContext;
   program: WebGLProgram;
   buffer: WebGLBuffer;
+  colorBuffer: WebGLBuffer;
   positionLocation: number;
+  colorLocation: number;
   zoomLocation: WebGLUniformLocation | null;
   panLocation: WebGLUniformLocation | null;
   sizeLocation: WebGLUniformLocation | null;
@@ -203,18 +205,22 @@ function DenseUmapCanvas({
 
     const program = createProgram(gl);
     const positionLocation = gl.getAttribLocation(program, 'a_position');
+    const colorLocation = gl.getAttribLocation(program, 'a_color');
     const zoomLocation = gl.getUniformLocation(program, 'u_zoom');
     const panLocation = gl.getUniformLocation(program, 'u_pan');
     const sizeLocation = gl.getUniformLocation(program, 'u_pointSize');
     const opacityLocation = gl.getUniformLocation(program, 'u_opacity');
     const buffer = gl.createBuffer();
-    if (!buffer) return;
+    const colorBuffer = gl.createBuffer();
+    if (!buffer || !colorBuffer) return;
 
     glStateRef.current = {
       gl,
       program,
       buffer,
+      colorBuffer,
       positionLocation,
+      colorLocation,
       zoomLocation,
       panLocation,
       sizeLocation,
@@ -228,6 +234,7 @@ function DenseUmapCanvas({
     return () => {
       observer.disconnect();
       gl.deleteBuffer(buffer);
+      gl.deleteBuffer(colorBuffer);
       gl.deleteProgram(program);
     };
   }, []);
@@ -237,8 +244,11 @@ function DenseUmapCanvas({
     const state = glStateRef.current;
     if (!canvas || !state) return;
     const upload = data.positions.subarray(0, data.loaded * 2);
+    const colorUpload = data.colors.subarray(0, data.loaded * 3);
     state.gl.bindBuffer(state.gl.ARRAY_BUFFER, state.buffer);
     state.gl.bufferData(state.gl.ARRAY_BUFFER, upload, state.gl.STATIC_DRAW);
+    state.gl.bindBuffer(state.gl.ARRAY_BUFFER, state.colorBuffer);
+    state.gl.bufferData(state.gl.ARRAY_BUFFER, colorUpload, state.gl.STATIC_DRAW);
     renderDenseCanvas(canvas, data.loaded, pointSize, opacity, viewRef.current, state);
   }, [data, opacity, pointSize]);
 
@@ -333,6 +343,9 @@ function renderDenseCanvas(
   gl.bindBuffer(gl.ARRAY_BUFFER, state.buffer);
   gl.enableVertexAttribArray(state.positionLocation);
   gl.vertexAttribPointer(state.positionLocation, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
+  gl.enableVertexAttribArray(state.colorLocation);
+  gl.vertexAttribPointer(state.colorLocation, 3, gl.FLOAT, false, 0, 0);
   gl.uniform1f(state.zoomLocation, view.zoom);
   gl.uniform2f(state.panLocation, view.panX, view.panY);
   gl.uniform1f(state.sizeLocation, pointSize * window.devicePixelRatio);
@@ -348,12 +361,15 @@ function createProgram(gl: WebGLRenderingContext) {
     gl.VERTEX_SHADER,
     `
       attribute vec2 a_position;
+      attribute vec3 a_color;
       uniform float u_zoom;
       uniform vec2 u_pan;
       uniform float u_pointSize;
+      varying vec3 v_color;
       void main() {
         gl_Position = vec4(a_position * u_zoom + u_pan, 0.0, 1.0);
         gl_PointSize = u_pointSize;
+        v_color = a_color;
       }
     `,
   );
@@ -363,10 +379,11 @@ function createProgram(gl: WebGLRenderingContext) {
     `
       precision mediump float;
       uniform float u_opacity;
+      varying vec3 v_color;
       void main() {
         vec2 center = gl_PointCoord - vec2(0.5);
         if (dot(center, center) > 0.25) discard;
-        gl_FragColor = vec4(0.02, 0.03, 0.04, u_opacity);
+        gl_FragColor = vec4(v_color, u_opacity);
       }
     `,
   );
