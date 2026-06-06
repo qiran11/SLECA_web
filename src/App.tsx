@@ -29,7 +29,7 @@ const navItems: Array<{ page: Page; label: string; icon: typeof CircleDot }> = [
 const MILLION_CHUNK_SIZE = 50000;
 
 function samplingLimit(mode: SamplingMode): number {
-  if (mode === 'million') return 1000000;
+  if (mode === 'million') return Number.POSITIVE_INFINITY;
   if (mode === 'sample300k') return 300000;
   if (mode === 'full') return 300000;
   if (mode === 'preview') return 10000;
@@ -115,15 +115,16 @@ export default function App() {
       const loadBatches = async () => {
         let offset = 0;
         let loaded = 0;
-        const target = samplingLimit(samplingMode);
+        const summary = await queryFilterSummary(filters);
+        const target = summary.filtered_rows;
         const positions = new Float32Array(target * 2);
         const colors = new Float32Array(target * 3);
         const cellIds: Array<string | number | null> = new Array(target);
-        const summary = await queryFilterSummary(filters);
         if (!ignore) {
           setFilterSummary(summary);
           setServerTotalRows(summary.total_rows);
           setServerFilteredRows(summary.filtered_rows);
+          setBatchProgress({ loaded: 0, target });
         }
 
         while (!ignore && offset < target) {
@@ -144,9 +145,8 @@ export default function App() {
           }
 
           loaded += writable;
-          const progressTarget = Math.min(target, response.filtered_rows);
-          setDenseData({ positions, colors, cellIds, loaded, target: progressTarget, totalFiltered: response.filtered_rows });
-          setBatchProgress({ loaded, target: progressTarget });
+          setDenseData({ positions, colors, cellIds, loaded, target, totalFiltered: response.filtered_rows });
+          setBatchProgress({ loaded, target });
           setLoading(false);
 
           offset += MILLION_CHUNK_SIZE;

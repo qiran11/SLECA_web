@@ -67,7 +67,7 @@ export function Header({
             <option value="sample100k">Sample 100k cells</option>
             <option value="sample300k">Sample 300k cells</option>
             <option value="full">Max 300k render</option>
-            <option value="million">Million batched</option>
+            <option value="million">All cells batched</option>
           </select>
 
           <button className="icon-button" onClick={onReset} title="Reset filters">
