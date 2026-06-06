@@ -54,3 +54,22 @@ export type CellQueryResponse = {
 export type CellMetadataResponse = {
   cell: CellRecord | null;
 };
+
+export type DenseUmapChunkResponse = {
+  source: string;
+  total_rows: number;
+  filtered_rows: number;
+  returned_rows: number;
+  offset: number;
+  x: number[];
+  y: number[];
+  cell_id: Array<string | number | null>;
+};
+
+export type DenseUmapData = {
+  positions: Float32Array;
+  cellIds: Array<string | number | null>;
+  loaded: number;
+  target: number;
+  totalFiltered: number;
+};

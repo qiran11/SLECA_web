@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 import { inflate } from 'pako';
-import type { CellMetadataResponse, CellQueryResponse, CellRecord, DataSource, DataSourceKey, FilterState } from '../types/cell';
+import type { CellMetadataResponse, CellQueryResponse, CellRecord, DataSource, DataSourceKey, DenseUmapChunkResponse, FilterState } from '../types/cell';
 
 const MAX_BROWSER_CSV_GZ_ROWS = 100000;
 
@@ -107,6 +107,29 @@ export async function loadCellMetadata(cellId: string | number): Promise<CellRec
   }
   const payload = (await response.json()) as CellMetadataResponse;
   return payload.cell;
+}
+
+export async function queryDenseUmapChunk(filters: FilterState, limit: number, offset: number): Promise<DenseUmapChunkResponse> {
+  const response = await fetch(`${API_BASE}/api/umap/dense`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      categorical: Object.fromEntries(
+        Object.entries(filters.categorical)
+          .filter(([, values]) => values.size > 0)
+          .map(([field, values]) => [field, Array.from(values)]),
+      ),
+      numeric: filters.numeric,
+      limit,
+      offset,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not query dense UMAP API (${response.status})`);
+  }
+
+  return response.json();
 }
 
 function sampleCsvText(csvText: string, maxRows: number): string {

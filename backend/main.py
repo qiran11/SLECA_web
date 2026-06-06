@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PARQUET_PATH = ROOT / "cell_metadata_umap.parquet"
 PRIVATE_COLUMNS = {"source_path"}
 MAX_LIMIT = 300_000
+DENSE_LIMIT = 100_000
 DEFAULT_LIMIT = 100_000
 UNKNOWN = "Unknown"
 LIGHT_COLUMNS = [
@@ -45,6 +46,13 @@ class QueryRequest(BaseModel):
     limit: int = DEFAULT_LIMIT
     offset: int = 0
     columns: list[str] | None = None
+
+
+class DenseUmapRequest(BaseModel):
+    categorical: dict[str, list[str]] = Field(default_factory=dict)
+    numeric: dict[str, NumericRange] = Field(default_factory=dict)
+    limit: int = 50_000
+    offset: int = 0
 
 
 app = FastAPI(
@@ -106,6 +114,47 @@ def query_cells(request: QueryRequest) -> dict[str, Any]:
     }
 
 
+@app.post("/api/umap/dense")
+def dense_umap(request: DenseUmapRequest) -> dict[str, Any]:
+    df = data_frame()
+    mask = build_filter_mask(df, request)
+    filtered = df.loc[mask]
+    limit = max(1, min(int(request.limit), DENSE_LIMIT))
+    offset = max(0, int(request.offset))
+    chunk = filtered.iloc[offset : offset + limit]
+
+    x = pd.to_numeric(chunk["UMAP_1"], errors="coerce")
+    y = pd.to_numeric(chunk["UMAP_2"], errors="coerce")
+    valid = x.notna() & y.notna()
+    x = x.loc[valid]
+    y = y.loc[valid]
+    valid_chunk = chunk.loc[valid]
+
+    bounds_x = pd.to_numeric(filtered["UMAP_1"], errors="coerce")
+    bounds_y = pd.to_numeric(filtered["UMAP_2"], errors="coerce")
+    min_x = float(bounds_x.min())
+    max_x = float(bounds_x.max())
+    min_y = float(bounds_y.min())
+    max_y = float(bounds_y.max())
+    scale_x = max(max_x - min_x, 1e-12)
+    scale_y = max(max_y - min_y, 1e-12)
+
+    norm_x = ((x - min_x) / scale_x) * 2 - 1
+    norm_y = -(((y - min_y) / scale_y) * 2 - 1)
+    cell_ids = valid_chunk["cell_id"].where(pd.notna(valid_chunk["cell_id"]), None).tolist() if "cell_id" in valid_chunk.columns else []
+
+    return {
+        "source": PARQUET_PATH.name,
+        "total_rows": int(len(df)),
+        "filtered_rows": int(len(filtered)),
+        "returned_rows": int(len(valid_chunk)),
+        "offset": offset,
+        "x": norm_x.astype(float).tolist(),
+        "y": norm_y.astype(float).tolist(),
+        "cell_id": cell_ids,
+    }
+
+
 @app.get("/api/cells/{cell_id}")
 def cell_metadata(cell_id: str) -> dict[str, Any]:
     df = data_frame()
@@ -119,7 +168,7 @@ def cell_metadata(cell_id: str) -> dict[str, Any]:
     return {"cell": to_json_rows(matches.head(1))[0]}
 
 
-def build_filter_mask(df: pd.DataFrame, request: QueryRequest) -> pd.Series:
+def build_filter_mask(df: pd.DataFrame, request: QueryRequest | DenseUmapRequest) -> pd.Series:
     mask = pd.Series(True, index=df.index)
     for field, values in request.categorical.items():
         if field in df.columns and values:

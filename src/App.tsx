@@ -9,11 +9,11 @@ import { OverviewDashboard } from './components/OverviewDashboard';
 import { ClinicalDashboard } from './components/ClinicalDashboard';
 import { CellTypeBrowser } from './components/CellTypeBrowser';
 import { SamplePatientSummary } from './components/SamplePatientSummary';
-import { DATA_SOURCES, getDataSource, loadCellMetadata, loadCells, queryParquetCells, queryParquetCellsPage } from './data/loadData';
+import { DATA_SOURCES, getDataSource, loadCellMetadata, loadCells, queryDenseUmapChunk, queryParquetCells } from './data/loadData';
 import { COLOR_FIELDS, applyFilters, emptyFilters, sampleCells } from './data/filters';
 import { availableFields } from './data/transformData';
 import { buildPatientAliases } from './utils/anonymize';
-import type { CellRecord, DataSourceKey, FilterState, SamplingMode, SelectedCell } from './types/cell';
+import type { CellRecord, DataSourceKey, DenseUmapData, FilterState, SamplingMode, SelectedCell } from './types/cell';
 
 type Page = 'browser' | 'overview' | 'clinical' | 'cellTypes' | 'samples';
 
@@ -26,7 +26,6 @@ const navItems: Array<{ page: Page; label: string; icon: typeof CircleDot }> = [
 ];
 
 const MILLION_CHUNK_SIZE = 50000;
-const MILLION_COLUMNS = ['cell_id', 'UMAP_1', 'UMAP_2'];
 
 function samplingLimit(mode: SamplingMode): number {
   if (mode === 'million') return 1000000;
@@ -51,6 +50,7 @@ export default function App() {
   const [serverTotalRows, setServerTotalRows] = useState<number | null>(null);
   const [serverFilteredRows, setServerFilteredRows] = useState<number | null>(null);
   const [batchProgress, setBatchProgress] = useState<{ loaded: number; target: number } | null>(null);
+  const [denseData, setDenseData] = useState<DenseUmapData | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -58,6 +58,7 @@ export default function App() {
     setError(null);
     setSelectedCell(null);
     setBatchProgress(null);
+    setDenseData(null);
 
     if (sourceKey === 'parquet') return;
 
@@ -68,6 +69,7 @@ export default function App() {
           setServerTotalRows(null);
           setServerFilteredRows(null);
           setBatchProgress(null);
+          setDenseData(null);
           setFilters(emptyFilters());
           setSamplingMode(sourceKey === 'preview' ? 'preview' : 'sample100k');
         }
@@ -98,20 +100,32 @@ export default function App() {
 
       const loadBatches = async () => {
         let offset = 0;
+        let loaded = 0;
         const target = samplingLimit(samplingMode);
+        const positions = new Float32Array(target * 2);
+        const cellIds: Array<string | number | null> = new Array(target);
 
         while (!ignore && offset < target) {
-          const response = await queryParquetCellsPage(filters, MILLION_CHUNK_SIZE, offset, MILLION_COLUMNS);
-          const nextLoaded = Math.min(offset + response.returned_rows, target, response.filtered_rows);
+          const response = await queryDenseUmapChunk(filters, MILLION_CHUNK_SIZE, offset);
+          const writable = Math.min(response.returned_rows, target - loaded);
 
           setServerTotalRows(response.total_rows);
           setServerFilteredRows(response.filtered_rows);
-          setCells((current) => (offset === 0 ? response.rows : [...current, ...response.rows]));
-          setBatchProgress({ loaded: nextLoaded, target: Math.min(target, response.filtered_rows) });
+
+          for (let index = 0; index < writable; index += 1) {
+            positions[(loaded + index) * 2] = response.x[index];
+            positions[(loaded + index) * 2 + 1] = response.y[index];
+            cellIds[loaded + index] = response.cell_id[index];
+          }
+
+          loaded += writable;
+          const progressTarget = Math.min(target, response.filtered_rows);
+          setDenseData({ positions, cellIds, loaded, target: progressTarget, totalFiltered: response.filtered_rows });
+          setBatchProgress({ loaded, target: progressTarget });
           setLoading(false);
 
-          offset += response.returned_rows;
-          if (response.returned_rows < MILLION_CHUNK_SIZE || offset >= response.filtered_rows) break;
+          offset += MILLION_CHUNK_SIZE;
+          if (response.returned_rows < MILLION_CHUNK_SIZE || offset >= response.filtered_rows || loaded >= target) break;
           await new Promise((resolve) => window.setTimeout(resolve, 80));
         }
       };
@@ -133,6 +147,7 @@ export default function App() {
       .then((response) => {
         if (!ignore) {
           setCells(response.rows);
+          setDenseData(null);
           setServerTotalRows(response.total_rows);
           setServerFilteredRows(response.filtered_rows);
           setBatchProgress(null);
@@ -170,6 +185,7 @@ export default function App() {
     setSelectedCell(null);
     setSamplingMode(nextSource === 'preview' ? 'preview' : 'sample100k');
     setBatchProgress(null);
+    setDenseData(null);
   };
 
   const handleSelectCell = (cell: CellRecord) => {
@@ -241,6 +257,7 @@ export default function App() {
               totalFiltered={serverFilteredRows ?? filteredCells.length}
               aliases={patientAliases}
               denseMode={samplingMode === 'million'}
+              denseData={denseData}
               batchProgress={batchProgress}
               onPointSize={setPointSize}
               onOpacity={setOpacity}

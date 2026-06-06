@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Plot from 'react-plotly.js';
 import { SlidersHorizontal } from 'lucide-react';
-import type { CellRecord } from '../types/cell';
+import type { CellRecord, DenseUmapData } from '../types/cell';
 import { numericValue } from '../data/filters';
 import { valueLabel } from '../data/transformData';
 import { colorFor } from '../utils/colors';
@@ -16,10 +16,22 @@ type UmapViewerProps = {
   loading: boolean;
   aliases: Map<string, string>;
   denseMode?: boolean;
+  denseData?: DenseUmapData | null;
   batchProgress?: { loaded: number; target: number } | null;
   onPointSize: (value: number) => void;
   onOpacity: (value: number) => void;
   onSelectCell: (cell: CellRecord) => void;
+};
+
+type DenseGlState = {
+  gl: WebGLRenderingContext;
+  program: WebGLProgram;
+  buffer: WebGLBuffer;
+  positionLocation: number;
+  zoomLocation: WebGLUniformLocation | null;
+  panLocation: WebGLUniformLocation | null;
+  sizeLocation: WebGLUniformLocation | null;
+  opacityLocation: WebGLUniformLocation | null;
 };
 
 export function UmapViewer({
@@ -31,6 +43,7 @@ export function UmapViewer({
   loading,
   aliases,
   denseMode = false,
+  denseData,
   batchProgress,
   onPointSize,
   onOpacity,
@@ -67,13 +80,15 @@ export function UmapViewer({
     };
   }, [aliases, cells, colorBy, denseMode, numericColor, opacity, pointSize]);
 
+  const renderedCount = denseMode ? denseData?.loaded ?? 0 : plotData.valid.length;
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white px-4 py-3">
         <div>
           <div className="text-sm font-semibold">UMAP Viewer</div>
           <div className="text-xs text-slate-500">
-            Showing {plotData.valid.length.toLocaleString()} of {totalFiltered.toLocaleString()} filtered cells
+            Showing {renderedCount.toLocaleString()} of {totalFiltered.toLocaleString()} filtered cells
             {denseMode ? ' - batched black-point mode' : ''}
           </div>
           {batchProgress && (
@@ -93,16 +108,16 @@ export function UmapViewer({
 
       <div className="relative min-h-[520px] flex-1">
         {loading && <CenterNote>Loading cells...</CenterNote>}
-        {!loading && cells.length === 0 && <CenterNote>No cells match the current filters.</CenterNote>}
-        {!loading && cells.length > 0 && denseMode && (
+        {!loading && renderedCount === 0 && <CenterNote>No cells match the current filters.</CenterNote>}
+        {!loading && renderedCount > 0 && denseMode && denseData && (
           <DenseUmapCanvas
-            cells={plotData.valid}
+            data={denseData}
             pointSize={pointSize}
             opacity={opacity}
             onSelectCell={onSelectCell}
           />
         )}
-        {!loading && cells.length > 0 && !denseMode && (
+        {!loading && renderedCount > 0 && !denseMode && (
           <Plot
             data={[plotData.trace]}
             layout={{
@@ -160,12 +175,12 @@ function CenterNote({ children }: { children: string }) {
 }
 
 function DenseUmapCanvas({
-  cells,
+  data,
   pointSize,
   opacity,
   onSelectCell,
 }: {
-  cells: CellRecord[];
+  data: DenseUmapData;
   pointSize: number;
   opacity: number;
   onSelectCell: (cell: CellRecord) => void;
@@ -174,27 +189,7 @@ function DenseUmapCanvas({
   const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 });
   const viewRef = useRef(view);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
-
-  const pointData = useMemo(() => {
-    const xs = cells.map((cell) => numericValue(cell.UMAP_1)).filter((value): value is number => value !== null);
-    const ys = cells.map((cell) => numericValue(cell.UMAP_2)).filter((value): value is number => value !== null);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const scaleX = maxX - minX || 1;
-    const scaleY = maxY - minY || 1;
-    const positions = new Float32Array(cells.length * 2);
-
-    cells.forEach((cell, index) => {
-      const x = numericValue(cell.UMAP_1) ?? minX;
-      const y = numericValue(cell.UMAP_2) ?? minY;
-      positions[index * 2] = ((x - minX) / scaleX) * 2 - 1;
-      positions[index * 2 + 1] = -(((y - minY) / scaleY) * 2 - 1);
-    });
-
-    return { positions, count: cells.length };
-  }, [cells]);
+  const glStateRef = useRef<DenseGlState | null>(null);
 
   useEffect(() => {
     viewRef.current = view;
@@ -213,42 +208,46 @@ function DenseUmapCanvas({
     const sizeLocation = gl.getUniformLocation(program, 'u_pointSize');
     const opacityLocation = gl.getUniformLocation(program, 'u_opacity');
     const buffer = gl.createBuffer();
+    if (!buffer) return;
 
-    const render = () => {
-      const rect = canvas.getBoundingClientRect();
-      const width = Math.max(1, Math.floor(rect.width * window.devicePixelRatio));
-      const height = Math.max(1, Math.floor(rect.height * window.devicePixelRatio));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.clearColor(0.972, 0.98, 0.976, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.useProgram(program);
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, pointData.positions, gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(positionLocation);
-      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-      gl.uniform1f(zoomLocation, viewRef.current.zoom);
-      gl.uniform2f(panLocation, viewRef.current.panX, viewRef.current.panY);
-      gl.uniform1f(sizeLocation, pointSize * window.devicePixelRatio);
-      gl.uniform1f(opacityLocation, opacity);
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      gl.drawArrays(gl.POINTS, 0, pointData.count);
+    glStateRef.current = {
+      gl,
+      program,
+      buffer,
+      positionLocation,
+      zoomLocation,
+      panLocation,
+      sizeLocation,
+      opacityLocation,
     };
 
-    render();
-    const observer = new ResizeObserver(render);
+    const observer = new ResizeObserver(() => {
+      if (glStateRef.current) renderDenseCanvas(canvas, data.loaded, pointSize, opacity, viewRef.current, glStateRef.current);
+    });
     observer.observe(canvas);
     return () => {
       observer.disconnect();
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     };
-  }, [opacity, pointData, pointSize, view]);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const state = glStateRef.current;
+    if (!canvas || !state) return;
+    const upload = data.positions.subarray(0, data.loaded * 2);
+    state.gl.bindBuffer(state.gl.ARRAY_BUFFER, state.buffer);
+    state.gl.bufferData(state.gl.ARRAY_BUFFER, upload, state.gl.STATIC_DRAW);
+    renderDenseCanvas(canvas, data.loaded, pointSize, opacity, viewRef.current, state);
+  }, [data, opacity, pointSize]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const state = glStateRef.current;
+    if (!canvas || !state) return;
+    renderDenseCanvas(canvas, data.loaded, pointSize, opacity, view, state);
+  }, [data.loaded, opacity, pointSize, view]);
 
   const toClip = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
@@ -267,9 +266,9 @@ function DenseUmapCanvas({
     let bestDistance = Number.POSITIVE_INFINITY;
     const threshold = 0.0008 / Math.max(viewRef.current.zoom, 0.5);
 
-    for (let index = 0; index < pointData.count; index += 1) {
-      const dx = pointData.positions[index * 2] - targetX;
-      const dy = pointData.positions[index * 2 + 1] - targetY;
+    for (let index = 0; index < data.loaded; index += 1) {
+      const dx = data.positions[index * 2] - targetX;
+      const dy = data.positions[index * 2 + 1] - targetY;
       const distance = dx * dx + dy * dy;
       if (distance < bestDistance) {
         bestDistance = distance;
@@ -277,7 +276,7 @@ function DenseUmapCanvas({
       }
     }
 
-    if (bestIndex >= 0 && bestDistance < threshold) onSelectCell(cells[bestIndex]);
+    if (bestIndex >= 0 && bestDistance < threshold) onSelectCell({ cell_id: data.cellIds[bestIndex] });
   };
 
   return (
@@ -308,6 +307,39 @@ function DenseUmapCanvas({
       }}
     />
   );
+}
+
+function renderDenseCanvas(
+  canvas: HTMLCanvasElement,
+  count: number,
+  pointSize: number,
+  opacity: number,
+  view: { zoom: number; panX: number; panY: number },
+  state: DenseGlState,
+) {
+  const { gl } = state;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.floor(rect.width * window.devicePixelRatio));
+  const height = Math.max(1, Math.floor(rect.height * window.devicePixelRatio));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.972, 0.98, 0.976, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(state.program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.buffer);
+  gl.enableVertexAttribArray(state.positionLocation);
+  gl.vertexAttribPointer(state.positionLocation, 2, gl.FLOAT, false, 0, 0);
+  gl.uniform1f(state.zoomLocation, view.zoom);
+  gl.uniform2f(state.panLocation, view.panX, view.panY);
+  gl.uniform1f(state.sizeLocation, pointSize * window.devicePixelRatio);
+  gl.uniform1f(state.opacityLocation, opacity);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawArrays(gl.POINTS, 0, count);
 }
 
 function createProgram(gl: WebGLRenderingContext) {
