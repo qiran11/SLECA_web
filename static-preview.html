@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SLE Single-cell Atlas Browser</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: #17212b; background: #eef3f1; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: white; border-bottom: 1px solid #d9e1df; }
+      h1 { margin: 0; font-size: 20px; }
+      .sub { margin-top: 3px; color: #667085; font-size: 13px; }
+      .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .pill, select, button, input { border: 1px solid #d9e1df; border-radius: 6px; background: white; height: 34px; padding: 0 10px; font-size: 13px; }
+      button { cursor: pointer; }
+      button.primary { background: #0f766e; color: white; border-color: #0f766e; }
+      .app { display: grid; grid-template-columns: 320px minmax(420px, 1fr) 350px; height: calc(100vh - 74px); }
+      aside { overflow: auto; background: white; border-right: 1px solid #d9e1df; }
+      aside.right { border-right: 0; border-left: 1px solid #d9e1df; }
+      main { position: relative; overflow: hidden; background: #f8faf9; }
+      .panel { padding: 14px; }
+      .section { border: 1px solid #d9e1df; border-radius: 6px; margin-bottom: 10px; overflow: hidden; }
+      .section h2 { display: flex; justify-content: space-between; align-items: center; margin: 0; padding: 10px; font-size: 14px; background: #f8faf9; border-bottom: 1px solid #d9e1df; }
+      .list { max-height: 220px; overflow: auto; padding: 8px; }
+      label.row { display: grid; grid-template-columns: 18px 1fr 70px 48px; align-items: center; gap: 6px; padding: 5px 2px; font-size: 13px; }
+      .bar { height: 6px; border-radius: 999px; background: #d9e1df; overflow: hidden; }
+      .bar span { display: block; height: 100%; background: #0f766e; }
+      canvas { display: block; width: 100%; height: 100%; }
+      .plot-tools { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; z-index: 2; pointer-events: none; }
+      .plot-tools > div { pointer-events: auto; background: rgba(255,255,255,.92); border: 1px solid #d9e1df; border-radius: 6px; padding: 9px 10px; box-shadow: 0 10px 24px rgba(23,33,43,.08); }
+      .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .metric { border: 1px solid #d9e1df; border-radius: 6px; padding: 10px; background: #f8faf9; }
+      .metric b { display: block; font-size: 20px; margin-top: 2px; }
+      .kv { border-bottom: 1px solid #edf1f0; padding: 7px 0; font-size: 13px; }
+      .kv span { display: block; color: #667085; font-size: 11px; text-transform: uppercase; }
+      .tooltip { position: fixed; display: none; pointer-events: none; background: #17212b; color: white; padding: 8px; border-radius: 6px; font-size: 12px; line-height: 1.45; max-width: 280px; z-index: 4; }
+      .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #667085; }
+      @media (max-width: 1100px) { .app { grid-template-columns: 290px 1fr; } aside.right { grid-column: 1 / -1; border-left: 0; border-top: 1px solid #d9e1df; max-height: 360px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>SLE Single-cell Atlas Browser</h1>
+        <div class="sub">Interactive visualization of cell metadata, clinical annotations, and UMAP embeddings.</div>
+      </div>
+      <div class="toolbar">
+        <div class="pill">File: <b>cell_metadata_umap_preview.csv</b></div>
+        <div class="pill">Loaded: <b id="loaded">0</b></div>
+        <div class="pill">Filtered: <b id="filtered">0</b></div>
+        <select id="colorBy"></select>
+        <button id="reset" class="primary">Reset Filters</button>
+        <button id="download">Download Filtered CSV</button>
+      </div>
+    </header>
+    <div class="app">
+      <aside><div class="panel" id="filters"></div></aside>
+      <main>
+        <div class="plot-tools">
+          <div>
+            <b>UMAP Viewer</b>
+            <div class="sub">Drag to pan, wheel to zoom, click a point for metadata.</div>
+          </div>
+          <div>
+            Point size <input id="size" type="range" min="1" max="8" value="3" />
+            Opacity <input id="opacity" type="range" min="0.15" max="1" step="0.05" value="0.8" />
+          </div>
+        </div>
+        <canvas id="umap"></canvas>
+        <div class="empty" id="empty" hidden>No cells match the current filters.</div>
+      </main>
+      <aside class="right"><div class="panel" id="meta"></div></aside>
+    </div>
+    <div class="tooltip" id="tip"></div>
+    <script>
+      const categoricalFields = ['group','dataset','batch','sample','sex','Status','cell_type_merge','cell_type_major_n','cell_type_clean','clusters','louvain'];
+      const colorFields = ['cell_type_merge','cell_type_major_n','group','dataset','sample','sex','SLEDAI','Age','pct_counts_mt','total_counts','n_genes_by_counts','doublet_scores'];
+      const metaFields = ['cell_id','cell_type_merge','cell_type_major_n','group','dataset','sample','batch','Age','sex','SLEDAI','SELENA-SLEDAI','Years Since Diagnosis','mCLASI_activity','mCLASI_damage','n_genes_by_counts','total_counts','pct_counts_mt','doublet_scores'];
+      const palette = ['#0f766e','#d75a4a','#4d8b57','#7c5c9b','#b8860b','#2f6f9f','#c45f88','#5b7f2a','#8c6b4f','#5969a8'];
+      let cells = [], filtered = [], selected = null, aliases = new Map(), filters = {}, scale = 1, panX = 0, panY = 0, dragging = false, last = null;
+      const canvas = document.getElementById('umap'), ctx = canvas.getContext('2d'), tip = document.getElementById('tip');
+
+      fetch('/cell_metadata_umap_preview.csv').then(r => r.text()).then(text => {
+        cells = parseCsv(text).map(normalize);
+        aliases = buildAliases(cells);
+        filtered = cells;
+        initControls();
+        renderFilters();
+        update();
+      }).catch(err => {
+        document.getElementById('meta').innerHTML = `<div class="section"><h2>Load Error</h2><div class="panel">${err.message}</div></div>`;
+      });
+
+      function parseCsv(text) {
+        const rows = [], out = []; let cell = '', quote = false;
+        for (let i = 0; i < text.length; i++) {
+          const c = text[i], n = text[i + 1];
+          if (c === '"' && quote && n === '"') { cell += '"'; i++; continue; }
+          if (c === '"') { quote = !quote; continue; }
+          if (c === ',' && !quote) { out.push(cell); cell = ''; continue; }
+          if ((c === '\n' || c === '\r') && !quote) {
+            if (c === '\r' && n === '\n') i++;
+            out.push(cell); rows.push(out.slice()); out.length = 0; cell = ''; continue;
+          }
+          cell += c;
+        }
+        if (cell || out.length) { out.push(cell); rows.push(out); }
+        const header = rows.shift();
+        return rows.filter(r => r.length > 1).map(r => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])));
+      }
+      function normalize(row) {
+        ['UMAP_1','UMAP_2','Age','age','SLEDAI','SELENA-SLEDAI','Years Since Diagnosis','mCLASI_activity','mCLASI_damage','n_genes_by_counts','total_counts','pct_counts_mt','doublet_scores'].forEach(k => {
+          const v = Number(row[k]); if (Number.isFinite(v)) row[k] = v;
+        });
+        return row;
+      }
+      function label(v) { return v === undefined || v === null || v === '' || String(v).toLowerCase() === 'nan' ? 'Unknown' : String(v); }
+      function countBy(rows, field, limit = 200) {
+        const m = new Map(); rows.forEach(r => m.set(label(r[field]), (m.get(label(r[field])) || 0) + 1));
+        return [...m].map(([label, count]) => ({ label, count })).sort((a,b) => b.count - a.count).slice(0, limit);
+      }
+      function buildAliases(rows) {
+        const ids = [...new Set(rows.map(r => label(r.Patient_ID || r.Participant)).filter(x => x !== 'Unknown'))].sort();
+        return new Map(ids.map((id, i) => [id, `P${String(i + 1).padStart(3, '0')}`]));
+      }
+      function patientAlias(r) { return aliases.get(label(r.Patient_ID || r.Participant)) || 'Unknown'; }
+      function initControls() {
+        document.getElementById('loaded').textContent = cells.length.toLocaleString();
+        const color = document.getElementById('colorBy');
+        color.innerHTML = colorFields.filter(f => f in cells[0]).map(f => `<option value="${f}">Color by ${f}</option>`).join('');
+        color.onchange = draw;
+        document.getElementById('size').oninput = draw;
+        document.getElementById('opacity').oninput = draw;
+        document.getElementById('reset').onclick = () => { filters = {}; selected = null; update(); };
+        document.getElementById('download').onclick = download;
+        addCanvasEvents();
+      }
+      function renderFilters() {
+        const root = document.getElementById('filters');
+        root.innerHTML = '<h2 style="margin:0 0 12px;font-size:15px">Metadata Filters</h2>' + categoricalFields.filter(f => f in cells[0]).map(field => {
+          const counts = countBy(cells, field, 80), max = counts[0]?.count || 1;
+          return `<div class="section"><h2>${field}<button data-clear="${field}">Clear</button></h2><div class="list">${
+            counts.map(c => `<label class="row"><input type="checkbox" data-field="${field}" value="${escapeHtml(c.label)}"><span title="${escapeHtml(c.label)}">${escapeHtml(c.label)}</span><span class="bar"><span style="width:${Math.max(4, c.count / max * 100)}%"></span></span><span>${c.count}</span></label>`).join('')
+          }</div></div>`;
+        }).join('');
+        root.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = e => {
+          const f = e.target.dataset.field, v = e.target.value;
+          filters[f] ||= new Set();
+          e.target.checked ? filters[f].add(v) : filters[f].delete(v);
+          update(false);
+        });
+        root.querySelectorAll('button[data-clear]').forEach(btn => btn.onclick = () => { delete filters[btn.dataset.clear]; update(); });
+      }
+      function applyFilters() {
+        filtered = cells.filter(r => Object.entries(filters).every(([f, set]) => !set.size || set.has(label(r[f]))));
+      }
+      function update(resetChecks = true) {
+        applyFilters();
+        document.getElementById('filtered').textContent = filtered.length.toLocaleString();
+        document.getElementById('empty').hidden = filtered.length > 0;
+        if (resetChecks) document.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = !!filters[cb.dataset.field]?.has(cb.value));
+        renderMeta();
+        draw();
+      }
+      function renderMeta() {
+        const root = document.getElementById('meta');
+        if (selected) {
+          root.innerHTML = `<div class="section"><h2>Selected Cell <button id="clearSelected">Clear</button></h2><div class="panel">${
+            metaFields.filter(f => f in selected).map(f => `<div class="kv"><span>${f}</span>${escapeHtml(f === 'Patient_ID' || f === 'Participant' ? patientAlias(selected) : label(selected[f]))}</div>`).join('')
+          }</div></div>`;
+          document.getElementById('clearSelected').onclick = () => { selected = null; renderMeta(); draw(); };
+          return;
+        }
+        const samples = new Set(filtered.map(r => label(r.sample)).filter(x => x !== 'Unknown')).size;
+        const patients = new Set(filtered.map(patientAlias).filter(x => x !== 'Unknown')).size;
+        root.innerHTML = `<div class="metric-grid">
+          <div class="metric">Cells<b>${filtered.length.toLocaleString()}</b></div>
+          <div class="metric">Samples<b>${samples.toLocaleString()}</b></div>
+          <div class="metric">Patients<b>${patients.toLocaleString()}</b></div>
+          <div class="metric">Datasets<b>${new Set(filtered.map(r => label(r.dataset))).size}</b></div>
+        </div>${miniList('Cell Types Top 10','cell_type_merge')}${miniList('Group Distribution','group')}${miniList('Dataset Distribution','dataset')}`;
+      }
+      function miniList(title, field) {
+        return `<div class="section"><h2>${title}</h2><div class="panel">${
+          countBy(filtered, field, 10).map(c => `<div class="kv"><span>${escapeHtml(c.label)}</span>${c.count.toLocaleString()}</div>`).join('')
+        }</div></div>`;
+      }
+      function resize() {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(600, rect.width * devicePixelRatio);
+        canvas.height = Math.max(450, rect.height * devicePixelRatio);
+      }
+      function bounds(rows) {
+        const xs = rows.map(r => +r.UMAP_1).filter(Number.isFinite), ys = rows.map(r => +r.UMAP_2).filter(Number.isFinite);
+        return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+      }
+      function project(r, b) {
+        const w = canvas.width, h = canvas.height, pad = 42 * devicePixelRatio;
+        const x = pad + ((+r.UMAP_1 - b.minX) / (b.maxX - b.minX || 1)) * (w - pad * 2);
+        const y = h - pad - ((+r.UMAP_2 - b.minY) / (b.maxY - b.minY || 1)) * (h - pad * 2);
+        return { x: x * scale + panX, y: y * scale + panY };
+      }
+      function colorFor(v) {
+        const s = label(v); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 9973;
+        return palette[h % palette.length];
+      }
+      function draw() {
+        resize();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!filtered.length) return;
+        const b = bounds(filtered), colorBy = document.getElementById('colorBy').value, size = +document.getElementById('size').value * devicePixelRatio, alpha = +document.getElementById('opacity').value;
+        ctx.globalAlpha = alpha;
+        filtered.forEach(r => {
+          const p = project(r, b);
+          ctx.fillStyle = selected === r ? '#d75a4a' : colorFor(r[colorBy]);
+          ctx.beginPath(); ctx.arc(p.x, p.y, selected === r ? size + 3 : size, 0, Math.PI * 2); ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+      }
+      function nearest(clientX, clientY) {
+        if (!filtered.length) return null;
+        const rect = canvas.getBoundingClientRect(), x = (clientX - rect.left) * devicePixelRatio, y = (clientY - rect.top) * devicePixelRatio, b = bounds(filtered);
+        let best = null, dist = Infinity;
+        for (const r of filtered) {
+          const p = project(r, b), d = (p.x - x) ** 2 + (p.y - y) ** 2;
+          if (d < dist) { dist = d; best = r; }
+        }
+        return dist < 160 ? best : null;
+      }
+      function addCanvasEvents() {
+        canvas.onmousedown = e => { dragging = true; last = { x: e.clientX, y: e.clientY }; };
+        window.onmouseup = () => { dragging = false; };
+        canvas.onmousemove = e => {
+          if (dragging) { panX += (e.clientX - last.x) * devicePixelRatio; panY += (e.clientY - last.y) * devicePixelRatio; last = { x: e.clientX, y: e.clientY }; draw(); return; }
+          const r = nearest(e.clientX, e.clientY);
+          if (!r) { tip.style.display = 'none'; return; }
+          tip.style.display = 'block'; tip.style.left = `${e.clientX + 14}px`; tip.style.top = `${e.clientY + 14}px`;
+          tip.innerHTML = ['cell_id','cell_type_merge','cell_type_major_n','group','dataset','sample','SLEDAI','Age','sex'].map(f => `${f}: ${escapeHtml(label(r[f]))}`).join('<br>') + `<br>Patient: ${patientAlias(r)}`;
+        };
+        canvas.onclick = e => { const r = nearest(e.clientX, e.clientY); if (r) { selected = r; renderMeta(); draw(); } };
+        canvas.onwheel = e => { e.preventDefault(); const factor = e.deltaY < 0 ? 1.12 : 0.9; scale = Math.max(.4, Math.min(12, scale * factor)); draw(); };
+        window.onresize = draw;
+      }
+      function download() {
+        const headers = Object.keys(cells[0] || {}).filter(h => h !== 'source_path');
+        const rows = filtered.map(r => headers.map(h => csvEscape(h === 'Patient_ID' || h === 'Participant' ? patientAlias(r) : r[h])).join(','));
+        const blob = new Blob([[headers.join(','), ...rows].join('\n')], { type: 'text/csv' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'filtered_cells.csv'; a.click(); URL.revokeObjectURL(a.href);
+      }
+      function csvEscape(v) { const s = label(v); return /[",\n]/.test(s) ? `"${s.replaceAll('"','""')}"` : s; }
+      function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    </script>
+  </body>
+</html>
