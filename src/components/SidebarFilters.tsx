@@ -14,6 +14,7 @@ type SidebarFiltersProps = {
 };
 
 export function SidebarFilters({ cells, filteredCells, filters, summary, onFilters }: SidebarFiltersProps) {
+  const [selectedNumericBins, setSelectedNumericBins] = useState<Record<string, Set<string>>>({});
   const categoricalFields = useMemo(
     () => (summary ? CATEGORICAL_FIELDS.filter((field) => summary.categorical[field]) : availableFields(cells, CATEGORICAL_FIELDS)),
     [cells, summary],
@@ -51,8 +52,35 @@ export function SidebarFilters({ cells, filteredCells, filters, summary, onFilte
             cells={cells}
             summaryStats={summary?.numeric[field]}
             current={filters.numeric[field]}
+            selectedBins={selectedNumericBins[field] ?? new Set()}
             onRange={(min, max) => onFilters(setNumericRange(filters, field, { min, max }))}
-            onClear={() => onFilters(clearField(filters, field))}
+            onBinToggle={(bin, bins) => {
+              const next = new Set(selectedNumericBins[field] ?? []);
+              next.has(bin.label) ? next.delete(bin.label) : next.add(bin.label);
+
+              setSelectedNumericBins((state) => ({ ...state, [field]: next }));
+
+              if (next.size === 0) {
+                onFilters(clearField(filters, field));
+                return;
+              }
+
+              const selected = bins.filter((item) => next.has(item.label));
+              onFilters(
+                setNumericRange(filters, field, {
+                  min: Math.min(...selected.map((item) => item.min)),
+                  max: Math.max(...selected.map((item) => item.max)),
+                }),
+              );
+            }}
+            onClear={() => {
+              setSelectedNumericBins((state) => {
+                const next = { ...state };
+                delete next[field];
+                return next;
+              });
+              onFilters(clearField(filters, field));
+            }}
           />
         ))}
       </div>
@@ -110,12 +138,15 @@ function NumericFilter({
   cells,
   current,
   summaryStats,
+  selectedBins,
   onRange,
+  onBinToggle,
   onClear,
 }: {
   field: string;
   cells: CellRecord[];
   current?: { min: number; max: number };
+  selectedBins: Set<string>;
   summaryStats?: {
     min: number;
     max: number;
@@ -123,6 +154,10 @@ function NumericFilter({
     bins: Array<{ label: string; min: number; max: number; count: number }>;
   };
   onRange: (min: number, max: number) => void;
+  onBinToggle: (
+    bin: { label: string; min: number; max: number; count: number },
+    bins: Array<{ label: string; min: number; max: number; count: number }>,
+  ) => void;
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(['Age', 'SLEDAI', 'pct_counts_mt'].includes(field));
@@ -153,9 +188,10 @@ function NumericFilter({
           </div>
           <div className="relative mb-3 flex h-14 items-end gap-0.5">
             {bins.map((bin) => (
-              <div
+              <button
+                type="button"
                 key={bin.label}
-                className="flex-1 rounded-t bg-gold/70 transition hover:bg-gold"
+                className={`block flex-1 rounded-t border-0 p-0 transition hover:bg-gold ${selectedBins.has(bin.label) ? 'bg-teal' : 'bg-gold/70'}`}
                 onMouseEnter={(event) =>
                   setHoveredBin({
                     label: bin.label,
@@ -173,6 +209,7 @@ function NumericFilter({
                   })
                 }
                 onMouseLeave={() => setHoveredBin(null)}
+                onClick={() => onBinToggle(bin, bins)}
                 style={{ height: `${Math.max(3, (bin.count / maxCount) * 100)}%` }}
               />
             ))}
