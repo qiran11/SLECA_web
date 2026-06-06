@@ -126,6 +126,12 @@ function NumericFilter({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(['Age', 'SLEDAI', 'pct_counts_mt'].includes(field));
+  const [hoveredBin, setHoveredBin] = useState<{
+    label: string;
+    count: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const stats = useMemo(() => summaryStats ?? numericSummary(cells, field), [cells, field, summaryStats]);
   const bins = useMemo(() => summaryStats?.bins ?? histogram(cells, field, 18), [cells, field, summaryStats]);
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
@@ -145,15 +151,44 @@ function NumericFilter({
             <span>Mean {formatNumber(stats.mean)}</span>
             <span>Max {formatNumber(stats.max)}</span>
           </div>
-          <div className="mb-3 flex h-14 items-end gap-0.5">
+          <div className="relative mb-3 flex h-14 items-end gap-0.5">
             {bins.map((bin) => (
               <div
                 key={bin.label}
-                className="flex-1 rounded-t bg-gold/70"
-                title={`${bin.label}: ${bin.count}`}
+                className="flex-1 rounded-t bg-gold/70 transition hover:bg-gold"
+                onMouseEnter={(event) =>
+                  setHoveredBin({
+                    label: bin.label,
+                    count: bin.count,
+                    x: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2,
+                    y: event.currentTarget.offsetTop,
+                  })
+                }
+                onMouseMove={(event) =>
+                  setHoveredBin({
+                    label: bin.label,
+                    count: bin.count,
+                    x: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2,
+                    y: event.currentTarget.offsetTop,
+                  })
+                }
+                onMouseLeave={() => setHoveredBin(null)}
                 style={{ height: `${Math.max(3, (bin.count / maxCount) * 100)}%` }}
               />
             ))}
+            {hoveredBin && (
+              <div
+                className="pointer-events-none absolute z-10 min-w-32 rounded border border-line bg-ink px-2 py-1 text-xs text-white shadow-soft"
+                style={{
+                  left: hoveredBin.x,
+                  top: hoveredBin.y,
+                  transform: 'translate(-50%, calc(-100% - 8px))',
+                }}
+              >
+                <div className="font-medium">Range: {hoveredBin.label}</div>
+                <div>Count: {hoveredBin.count.toLocaleString()}</div>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <input className="input" type="number" value={min} onChange={(event) => onRange(Number(event.target.value), max)} />
