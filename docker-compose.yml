@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    volumes:
+      - ./cell_metadata_umap.parquet:/app/cell_metadata_umap.parquet:ro
+    expose:
+      - "8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_BASE: ""
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api

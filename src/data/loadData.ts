@@ -23,12 +23,12 @@ export const DATA_SOURCES: DataSource[] = [
     key: 'parquet',
     label: 'Parquet API',
     fileName: 'cell_metadata_umap.parquet',
-    path: 'http://127.0.0.1:8000/api/cells/query',
+    path: '/api/cells/query',
     enabled: true,
   },
 ];
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000';
+const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
 const NUMERIC_HINTS = new Set([
   'UMAP_1',

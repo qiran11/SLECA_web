@@ -42,6 +42,25 @@ npm run dev -- --host 127.0.0.1 --port 5175
 
 Open `http://127.0.0.1:5175/`.
 
+## Deploy To Server
+
+The recommended deployment path is Docker Compose:
+
+```bash
+git clone https://github.com/qiran11/SLECA_web.git
+cd SLECA_web
+```
+
+Copy `cell_metadata_umap.parquet` into the project root on the server, then start:
+
+```bash
+docker compose up -d --build
+```
+
+Open `http://SERVER_IP/`.
+
+See `DEPLOY.md` for the full server checklist, logs, updates, and data-file notes.
+
 ## Data Files
 
 Keep the data files in the project root so Vite can serve them from `/`:

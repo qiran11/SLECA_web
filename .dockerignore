@@ -1,0 +1,14 @@
+node_modules
+dist
+.vite
+.venv
+__pycache__
+*.py[cod]
+*.log
+.git
+.codex
+.agents
+
+cell_metadata_umap.csv.gz
+cell_metadata_umap.parquet
+cell_metadata_umap_preview.csv
