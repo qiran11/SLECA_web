@@ -5,7 +5,6 @@ import type { CellRecord, DenseUmapData } from '../types/cell';
 import { numericValue } from '../data/filters';
 import { valueLabel } from '../data/transformData';
 import { colorFor } from '../utils/colors';
-import { patientAlias } from '../utils/anonymize';
 
 type UmapViewerProps = {
   cells: CellRecord[];
@@ -28,10 +27,14 @@ type DenseGlState = {
   program: WebGLProgram;
   buffer: WebGLBuffer;
   colorBuffer: WebGLBuffer;
+  indexBuffer: WebGLBuffer;
+  supportsUintIndices: boolean;
   positionLocation: number;
   colorLocation: number;
   zoomLocation: WebGLUniformLocation | null;
   panLocation: WebGLUniformLocation | null;
+  centerLocation: WebGLUniformLocation | null;
+  scaleLocation: WebGLUniformLocation | null;
   sizeLocation: WebGLUniformLocation | null;
   opacityLocation: WebGLUniformLocation | null;
 };
@@ -91,7 +94,7 @@ export function UmapViewer({
           <div className="text-sm font-semibold">UMAP Viewer</div>
           <div className="text-xs text-slate-500">
             Showing {renderedCount.toLocaleString()} of {totalFiltered.toLocaleString()} filtered cells
-            {denseMode ? ' - batched black-point mode' : ''}
+            {denseMode ? ' - batched WebGL mode' : ''}
           </div>
           {batchProgress && (
             <div className="mt-2 h-1.5 w-72 overflow-hidden rounded bg-slate-200">
@@ -103,7 +106,7 @@ export function UmapViewer({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Control label="Point size" value={pointSize} min={2} max={10} step={1} onChange={onPointSize} />
+          <Control label="Point size" value={pointSize} min={1} max={8} step={1} onChange={onPointSize} />
           <Control label="Opacity" value={opacity} min={0.1} max={1} step={0.05} onChange={onOpacity} />
         </div>
       </div>
@@ -162,11 +165,29 @@ function Control({
   step: number;
   onChange: (value: number) => void;
 }) {
+  const clamp = (nextValue: number) => Math.max(min, Math.min(max, Number(nextValue.toFixed(2))));
+
   return (
     <label className="flex items-center gap-2 text-xs text-slate-600">
       <SlidersHorizontal size={15} />
       {label}
+      <button
+        type="button"
+        className="grid h-6 w-6 place-items-center rounded border border-line bg-white text-sm font-semibold leading-none text-slate-600 transition hover:border-teal hover:text-teal"
+        onClick={() => onChange(clamp(value - step))}
+        title={`Decrease ${label}`}
+      >
+        -
+      </button>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <button
+        type="button"
+        className="grid h-6 w-6 place-items-center rounded border border-line bg-white text-sm font-semibold leading-none text-slate-600 transition hover:border-teal hover:text-teal"
+        onClick={() => onChange(clamp(value + step))}
+        title={`Increase ${label}`}
+      >
+        +
+      </button>
       <span className="w-8 text-right">{value}</span>
     </label>
   );
@@ -208,33 +229,42 @@ function DenseUmapCanvas({
     const colorLocation = gl.getAttribLocation(program, 'a_color');
     const zoomLocation = gl.getUniformLocation(program, 'u_zoom');
     const panLocation = gl.getUniformLocation(program, 'u_pan');
+    const centerLocation = gl.getUniformLocation(program, 'u_center');
+    const scaleLocation = gl.getUniformLocation(program, 'u_scale');
     const sizeLocation = gl.getUniformLocation(program, 'u_pointSize');
     const opacityLocation = gl.getUniformLocation(program, 'u_opacity');
     const buffer = gl.createBuffer();
     const colorBuffer = gl.createBuffer();
-    if (!buffer || !colorBuffer) return;
+    const indexBuffer = gl.createBuffer();
+    const supportsUintIndices = Boolean(gl.getExtension('OES_element_index_uint'));
+    if (!buffer || !colorBuffer || !indexBuffer) return;
 
     glStateRef.current = {
       gl,
       program,
       buffer,
       colorBuffer,
+      indexBuffer,
+      supportsUintIndices,
       positionLocation,
       colorLocation,
       zoomLocation,
       panLocation,
+      centerLocation,
+      scaleLocation,
       sizeLocation,
       opacityLocation,
     };
 
     const observer = new ResizeObserver(() => {
-      if (glStateRef.current) renderDenseCanvas(canvas, data.loaded, pointSize, opacity, viewRef.current, glStateRef.current);
+      if (glStateRef.current) renderDenseCanvas(canvas, data, pointSize, opacity, viewRef.current, glStateRef.current);
     });
     observer.observe(canvas);
     return () => {
       observer.disconnect();
       gl.deleteBuffer(buffer);
       gl.deleteBuffer(colorBuffer);
+      gl.deleteBuffer(indexBuffer);
       gl.deleteProgram(program);
     };
   }, []);
@@ -249,14 +279,18 @@ function DenseUmapCanvas({
     state.gl.bufferData(state.gl.ARRAY_BUFFER, upload, state.gl.STATIC_DRAW);
     state.gl.bindBuffer(state.gl.ARRAY_BUFFER, state.colorBuffer);
     state.gl.bufferData(state.gl.ARRAY_BUFFER, colorUpload, state.gl.STATIC_DRAW);
-    renderDenseCanvas(canvas, data.loaded, pointSize, opacity, viewRef.current, state);
+    if (data.renderOrder && state.supportsUintIndices) {
+      state.gl.bindBuffer(state.gl.ELEMENT_ARRAY_BUFFER, state.indexBuffer);
+      state.gl.bufferData(state.gl.ELEMENT_ARRAY_BUFFER, data.renderOrder.subarray(0, data.loaded), state.gl.STATIC_DRAW);
+    }
+    renderDenseCanvas(canvas, data, pointSize, opacity, viewRef.current, state);
   }, [data, opacity, pointSize]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const state = glStateRef.current;
     if (!canvas || !state) return;
-    renderDenseCanvas(canvas, data.loaded, pointSize, opacity, view, state);
+    renderDenseCanvas(canvas, data, pointSize, opacity, view, state);
   }, [data.loaded, opacity, pointSize, view]);
 
   const toClip = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -275,10 +309,12 @@ function DenseUmapCanvas({
     let bestIndex = -1;
     let bestDistance = Number.POSITIVE_INFINITY;
     const threshold = 0.0008 / Math.max(viewRef.current.zoom, 0.5);
+    const projection = denseProjection(data, canvasRef.current!);
 
     for (let index = 0; index < data.loaded; index += 1) {
-      const dx = data.positions[index * 2] - targetX;
-      const dy = data.positions[index * 2 + 1] - targetY;
+      const projected = projectDensePoint(data.positions[index * 2], data.positions[index * 2 + 1], projection);
+      const dx = projected.x - targetX;
+      const dy = projected.y - targetY;
       const distance = dx * dx + dy * dy;
       if (distance < bestDistance) {
         bestDistance = distance;
@@ -321,7 +357,7 @@ function DenseUmapCanvas({
 
 function renderDenseCanvas(
   canvas: HTMLCanvasElement,
-  count: number,
+  data: DenseUmapData,
   pointSize: number,
   opacity: number,
   view: { zoom: number; panX: number; panY: number },
@@ -337,6 +373,7 @@ function renderDenseCanvas(
   }
 
   gl.viewport(0, 0, canvas.width, canvas.height);
+  const projection = denseProjection(data, canvas);
   gl.clearColor(0.972, 0.98, 0.976, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(state.program);
@@ -348,11 +385,38 @@ function renderDenseCanvas(
   gl.vertexAttribPointer(state.colorLocation, 3, gl.FLOAT, false, 0, 0);
   gl.uniform1f(state.zoomLocation, view.zoom);
   gl.uniform2f(state.panLocation, view.panX, view.panY);
+  gl.uniform2f(state.centerLocation, projection.centerX, projection.centerY);
+  gl.uniform2f(state.scaleLocation, projection.scaleX, projection.scaleY);
   gl.uniform1f(state.sizeLocation, pointSize * window.devicePixelRatio);
   gl.uniform1f(state.opacityLocation, opacity);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  gl.drawArrays(gl.POINTS, 0, count);
+  if (data.renderOrder && state.supportsUintIndices) {
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.indexBuffer);
+    gl.drawElements(gl.POINTS, data.loaded, gl.UNSIGNED_INT, 0);
+  } else {
+    gl.drawArrays(gl.POINTS, 0, data.loaded);
+  }
+}
+
+function denseProjection(data: DenseUmapData, canvas: HTMLCanvasElement) {
+  const width = Math.max(1, canvas.clientWidth || canvas.width || 1);
+  const height = Math.max(1, canvas.clientHeight || canvas.height || 1);
+  const aspect = width / height;
+  const centerX = (data.bounds.minX + data.bounds.maxX) / 2;
+  const centerY = (data.bounds.minY + data.bounds.maxY) / 2;
+  const rangeX = Math.max(data.bounds.maxX - data.bounds.minX, 1e-12);
+  const rangeY = Math.max(data.bounds.maxY - data.bounds.minY, 1e-12);
+  const scaleY = Math.max(rangeY, rangeX / aspect);
+  const scaleX = scaleY * aspect;
+  return { centerX, centerY, scaleX, scaleY };
+}
+
+function projectDensePoint(x: number, y: number, projection: ReturnType<typeof denseProjection>) {
+  return {
+    x: ((x - projection.centerX) / projection.scaleX) * 1.9,
+    y: ((y - projection.centerY) / projection.scaleY) * 1.9,
+  };
 }
 
 function createProgram(gl: WebGLRenderingContext) {
@@ -364,10 +428,16 @@ function createProgram(gl: WebGLRenderingContext) {
       attribute vec3 a_color;
       uniform float u_zoom;
       uniform vec2 u_pan;
+      uniform vec2 u_center;
+      uniform vec2 u_scale;
       uniform float u_pointSize;
       varying vec3 v_color;
       void main() {
-        gl_Position = vec4(a_position * u_zoom + u_pan, 0.0, 1.0);
+        vec2 projected = vec2(
+          (a_position.x - u_center.x) / u_scale.x,
+          (a_position.y - u_center.y) / u_scale.y
+        ) * 1.9;
+        gl_Position = vec4(projected * u_zoom + u_pan, 0.0, 1.0);
         gl_PointSize = u_pointSize;
         v_color = a_color;
       }
@@ -412,6 +482,6 @@ function compileShader(gl: WebGLRenderingContext, type: number, source: string) 
 }
 
 function tooltipText(cell: CellRecord, aliases: Map<string, string>) {
-  const fields = ['cell_id', 'cell_type_merge', 'cell_type_major_n', 'group', 'dataset', 'sample', 'SLEDAI', 'Age', 'sex'];
-  return [...fields.map((field) => `${field}: ${valueLabel(cell[field])}`), `Patient: ${patientAlias(cell, aliases)}`].join('<br>');
+  const fields = ['Cell ID', 'Major cell type', 'Cell subtype', 'Group', 'Origin', 'Dataset', 'Sample', 'Sex', 'Age', 'Age group', 'SLEDAI'];
+  return fields.map((field) => `${field}: ${valueLabel(cell[field])}`).join('<br>');
 }

@@ -11,4 +11,5 @@ __pycache__
 
 cell_metadata_umap.csv.gz
 cell_metadata_umap.parquet
+cell_metadata_umap_new.parquet
 cell_metadata_umap_preview.csv

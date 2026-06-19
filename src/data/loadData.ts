@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 import { inflate } from 'pako';
-import type { CellMetadataResponse, CellQueryResponse, CellRecord, DataSource, DataSourceKey, DenseUmapChunkResponse, FilterState, FilterSummary } from '../types/cell';
+import type { CellMetadataResponse, CellQueryResponse, CellRecord, DataSource, DataSourceKey, DenseColorChunkResponse, DenseUmapChunkResponse, FilterState, FilterSummary } from '../types/cell';
 
 const MAX_BROWSER_CSV_GZ_ROWS = 100000;
 
@@ -34,16 +34,7 @@ const NUMERIC_HINTS = new Set([
   'UMAP_1',
   'UMAP_2',
   'Age',
-  'age',
   'SLEDAI',
-  'SELENA-SLEDAI',
-  'Years Since Diagnosis',
-  'mCLASI_activity',
-  'mCLASI_damage',
-  'n_genes_by_counts',
-  'total_counts',
-  'pct_counts_mt',
-  'doublet_scores',
 ]);
 
 export function getDataSource(key: DataSourceKey): DataSource {
@@ -133,6 +124,30 @@ export async function queryDenseUmapChunk(filters: FilterState, limit: number, o
   return response.json();
 }
 
+export async function queryDenseColorChunk(filters: FilterState, limit: number, offset: number, colorBy: string): Promise<DenseColorChunkResponse> {
+  const response = await fetch(`${API_BASE}/api/umap/colors`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      categorical: Object.fromEntries(
+        Object.entries(filters.categorical)
+          .filter(([, values]) => values.size > 0)
+          .map(([field, values]) => [field, Array.from(values)]),
+      ),
+      numeric: filters.numeric,
+      limit,
+      offset,
+      color_by: colorBy,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not query dense color API (${response.status})`);
+  }
+
+  return response.json();
+}
+
 export async function queryFilterSummary(filters: FilterState): Promise<FilterSummary> {
   const response = await fetch(`${API_BASE}/api/filters/summary`, {
     method: 'POST',
@@ -152,6 +167,50 @@ export async function queryFilterSummary(filters: FilterState): Promise<FilterSu
   }
 
   return response.json();
+}
+
+export async function queryFilterFacets(filters: FilterState): Promise<FilterSummary> {
+  const response = await fetch(`${API_BASE}/api/filters/facets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      categorical: Object.fromEntries(
+        Object.entries(filters.categorical)
+          .filter(([, values]) => values.size > 0)
+          .map(([field, values]) => [field, Array.from(values)]),
+      ),
+      numeric: filters.numeric,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not query filter facets API (${response.status})`);
+  }
+
+  return response.json();
+}
+
+export async function querySummaryRows(filters: FilterState, mode: 'sample' | 'patient'): Promise<Array<Record<string, string | number>>> {
+  const response = await fetch(`${API_BASE}/api/summary/rows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      categorical: Object.fromEntries(
+        Object.entries(filters.categorical)
+          .filter(([, values]) => values.size > 0)
+          .map(([field, values]) => [field, Array.from(values)]),
+      ),
+      numeric: filters.numeric,
+      mode,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not query summary rows API (${response.status})`);
+  }
+
+  const payload = (await response.json()) as { rows: Array<Record<string, string | number>> };
+  return payload.rows;
 }
 
 function sampleCsvText(csvText: string, maxRows: number): string {

@@ -96,10 +96,26 @@ The production path uses FastAPI plus pandas/pyarrow to read parquet server-side
 
 For performance, `/api/cells/query` returns a lightweight row shape for UMAP rendering rather than every metadata column. A clicked cell's full metadata is loaded on demand from `/api/cells/{cell_id}`.
 
+The current production parquet should contain these display fields:
+
+- `Cell ID`
+- `UMAP_1`
+- `UMAP_2`
+- `Group`
+- `Origin`
+- `Dataset`
+- `Sample`
+- `Sex`
+- `Age`
+- `Age group`
+- `SLEDAI`
+- `SLEDAI source`
+- `Major cell type`
+- `Cell subtype`
+
 `All cells batched` is an experimental dense UMAP mode. It uses `/api/umap/dense`, which returns column-oriented arrays (`x`, `y`, `cell_id`) in 50k-point chunks. The frontend writes those chunks into a preallocated `Float32Array` and renders points with a native WebGL canvas instead of Plotly or React row objects. It progressively appends all filtered cells and is intended for inspecting the global UMAP shape; hover richness, dashboards, and sidebar summaries remain better suited to the 100k/300k modes.
 
 ## Privacy Defaults
 
-- `Patient_ID` and `Participant` are displayed through anonymized aliases such as `P001`.
 - `source_path` is excluded from exported filtered cell CSVs and selected-cell metadata.
 - Race, ethnicity, and skin lesion location fields are not shown in the default metadata panel if present.

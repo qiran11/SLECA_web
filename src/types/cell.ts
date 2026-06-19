@@ -1,5 +1,6 @@
 export type CellRecord = {
   [key: string]: string | number | null | undefined;
+  'Cell ID'?: string | number | null;
   cell_id?: string | number | null;
   UMAP_1?: number | null;
   UMAP_2?: number | null;
@@ -65,15 +66,37 @@ export type DenseUmapChunkResponse = {
   y: number[];
   cell_id: Array<string | number | null>;
   color?: Array<string | number | null>;
+  bounds?: {
+    min_x: number;
+    max_x: number;
+    min_y: number;
+    max_y: number;
+  };
+};
+
+export type DenseColorChunkResponse = {
+  source: string;
+  total_rows: number;
+  filtered_rows: number;
+  returned_rows: number;
+  offset: number;
+  color: Array<string | number | null>;
 };
 
 export type DenseUmapData = {
   positions: Float32Array;
   colors: Float32Array;
+  renderOrder?: Uint32Array;
   cellIds: Array<string | number | null>;
   loaded: number;
   target: number;
   totalFiltered: number;
+  bounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
 };
 
 export type FilterSummary = {

@@ -1,6 +1,6 @@
 import type { CellRecord, ClinicalBucket } from '../types/cell';
 
-const privateFields = new Set(['source_path', 'Race', 'Ethnicity', 'location of skin lesions']);
+const privateFields = new Set(['source_path', 'cell_id', 'Race', 'Ethnicity', 'location of skin lesions']);
 
 export function availableFields(cells: CellRecord[], candidates: string[]): string[] {
   const first = cells[0] ?? {};
@@ -34,15 +34,15 @@ export function safeMetadataEntries(cell: CellRecord, patientAlias: string): Arr
 }
 
 export function getPatientKey(cell: CellRecord): string {
-  return valueLabel(cell.Patient_ID ?? cell.Participant ?? cell.patient_id);
+  return valueLabel(cell.Origin ?? cell.Patient_ID ?? cell.Participant ?? cell.patient_id);
 }
 
 export function getSampleKey(cell: CellRecord): string {
-  return valueLabel(cell.sample ?? cell.sample_name);
+  return valueLabel(cell.Sample ?? cell.sample ?? cell.sample_name);
 }
 
 export function getCellType(cell: CellRecord): string {
-  return valueLabel(cell.cell_type_merge ?? cell.cell_type_major_n ?? cell.cell_type_clean);
+  return valueLabel(cell['Cell subtype'] ?? cell['Major cell type'] ?? cell.cell_type_merge ?? cell.cell_type_major_n ?? cell.cell_type_clean);
 }
 
 export function sleBucket(value: unknown): ClinicalBucket {
@@ -54,7 +54,7 @@ export function sleBucket(value: unknown): ClinicalBucket {
   return '>=9';
 }
 
-export function groupComposition(cells: CellRecord[], groupField: string, typeField = 'cell_type_merge') {
+export function groupComposition(cells: CellRecord[], groupField: string, typeField = 'Cell subtype') {
   const groups = new Map<string, Map<string, number>>();
 
   cells.forEach((cell) => {

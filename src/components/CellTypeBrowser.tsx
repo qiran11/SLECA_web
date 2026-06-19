@@ -1,26 +1,29 @@
 import { useMemo, useState } from 'react';
 import { ArrowLeft, Search } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { CellRecord } from '../types/cell';
+import type { CategoryCount, CellRecord } from '../types/cell';
 import { histogram } from '../data/statistics';
 import { topValues, valueLabel } from '../data/transformData';
-import { ChartCard } from './ChartCard';
 import { BarCard, MetricGrid } from './OverviewDashboard';
 
 type CellTypeBrowserProps = {
   cells: CellRecord[];
   colorBy: string;
+  cellTypeCounts?: CategoryCount[] | null;
   onColorBy: (field: string) => void;
   onHighlight: (cellType: string) => void;
   onBackToUmap: () => void;
 };
 
-export function CellTypeBrowser({ cells, onColorBy, onHighlight, onBackToUmap }: CellTypeBrowserProps) {
+export function CellTypeBrowser({ cells, cellTypeCounts, onColorBy, onHighlight, onBackToUmap }: CellTypeBrowserProps) {
   const [query, setQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string | null>(null);
-  const counts = useMemo(() => topValues(cells, 'cell_type_merge', 500), [cells]);
+  const counts = useMemo(
+    () => (cellTypeCounts ?? topValues(cells, 'Cell subtype', 500)).filter((item) => item.label.toLowerCase() !== 'unknown'),
+    [cellTypeCounts, cells],
+  );
   const visible = counts.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()));
-  const selectedRows = cells.filter((cell) => valueLabel(cell.cell_type_merge) === selectedType);
+  const selectedRows = cells.filter((cell) => valueLabel(cell['Cell subtype']) === selectedType);
+  const selectedCount = selectedType ? counts.find((item) => item.label === selectedType)?.count ?? selectedRows.length : 0;
 
   return (
     <div className="grid grid-cols-[360px_1fr] gap-4 max-lg:grid-cols-1">
@@ -58,7 +61,7 @@ export function CellTypeBrowser({ cells, onColorBy, onHighlight, onBackToUmap }:
               <button
                 className="button"
                 onClick={() => {
-                  onColorBy('cell_type_merge');
+                  onColorBy('Cell subtype');
                   onHighlight(selectedType);
                   onBackToUmap();
                 }}
@@ -70,52 +73,25 @@ export function CellTypeBrowser({ cells, onColorBy, onHighlight, onBackToUmap }:
 
             <MetricGrid
               metrics={[
-                ['Cells', selectedRows.length],
-                ['Datasets', new Set(selectedRows.map((row) => valueLabel(row.dataset))).size],
-                ['Samples', new Set(selectedRows.map((row) => valueLabel(row.sample))).size],
-                ['Groups', new Set(selectedRows.map((row) => valueLabel(row.group))).size],
-                ['Patients', new Set(selectedRows.map((row) => valueLabel(row.Patient_ID))).size],
+                ['Cells', selectedCount],
+                ['Datasets', new Set(selectedRows.map((row) => valueLabel(row.Dataset))).size],
+                ['Samples', new Set(selectedRows.map((row) => valueLabel(row.Sample))).size],
+                ['Groups', new Set(selectedRows.map((row) => valueLabel(row.Group))).size],
+                ['Origins', new Set(selectedRows.map((row) => valueLabel(row.Origin))).size],
               ]}
             />
 
             <div className="grid grid-cols-2 gap-4 max-lg:grid-cols-1">
-              <BarCard title="SLE / HC Counts" data={topValues(selectedRows, 'group', 8)} />
-              <BarCard title="Datasets" data={topValues(selectedRows, 'dataset', 10)} />
-              <BarCard title="Samples" data={topValues(selectedRows, 'sample', 10)} />
-              <BarCard title="SLEDAI Distribution" data={histogram(selectedRows, 'SLEDAI', 10)} labelKey="label" />
-              <BarCard title="Age Distribution" data={histogram(selectedRows, 'Age', 10)} labelKey="label" />
-              <QcChart rows={selectedRows} />
+              <BarCard title="Groups" data={topValues(selectedRows, 'Group', 8)} />
+              <BarCard title="Datasets" data={topValues(selectedRows, 'Dataset', 10)} />
+              <BarCard title="Samples" data={topValues(selectedRows, 'Sample', 10)} />
+              <BarCard title="SLEDAI Distribution" data={histogram(selectedRows, 'SLEDAI', 10)} labelKey="label" variant="numeric" />
+              <BarCard title="Age Distribution" data={histogram(selectedRows, 'Age', 10)} labelKey="label" variant="numeric" />
+              <BarCard title="Major Cell Types" data={topValues(selectedRows, 'Major cell type', 10)} />
             </div>
           </>
         )}
       </section>
     </div>
-  );
-}
-
-function QcChart({ rows }: { rows: CellRecord[] }) {
-  const data = ['pct_counts_mt', 'total_counts', 'n_genes_by_counts'].map((field) => ({
-    label: field,
-    count:
-      rows
-        .map((row) => Number(row[field]))
-        .filter(Number.isFinite)
-        .reduce((sum, value, _, arr) => sum + value / Math.max(arr.length, 1), 0) || 0,
-  }));
-
-  return (
-    <ChartCard title="QC Mean Values">
-      <div className="h-72">
-        <ResponsiveContainer>
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip />
-            <Bar dataKey="count" fill="#d75a4a" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </ChartCard>
   );
 }

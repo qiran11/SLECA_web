@@ -2,46 +2,34 @@ import type { CellRecord, FilterState, NumericRange, SamplingMode } from '../typ
 import { valueLabel } from './transformData';
 
 export const CATEGORICAL_FIELDS = [
-  'group',
-  'dataset',
-  'batch',
-  'sample',
-  'sex',
-  'Status',
-  'cell_type_merge',
-  'cell_type_major_n',
-  'cell_type_clean',
-  'clusters',
-  'louvain',
+  'Group',
+  'Origin',
+  'Dataset',
+  'Sample',
+  'Sex',
+  'Age group',
+  'SLEDAI source',
+  'Major cell type',
+  'Cell subtype',
 ];
 
 export const NUMERIC_FIELDS = [
   'Age',
-  'age',
   'SLEDAI',
-  'SELENA-SLEDAI',
-  'Years Since Diagnosis',
-  'mCLASI_activity',
-  'mCLASI_damage',
-  'n_genes_by_counts',
-  'total_counts',
-  'pct_counts_mt',
-  'doublet_scores',
 ];
 
 export const COLOR_FIELDS = [
-  'cell_type_merge',
-  'cell_type_major_n',
-  'group',
-  'dataset',
-  'sample',
-  'sex',
+  'Major cell type',
+  'Cell subtype',
+  'Group',
+  'Origin',
+  'Dataset',
+  'Sample',
+  'Sex',
+  'Age group',
+  'SLEDAI source',
   'SLEDAI',
   'Age',
-  'pct_counts_mt',
-  'total_counts',
-  'n_genes_by_counts',
-  'doublet_scores',
 ];
 
 export const emptyFilters = (): FilterState => ({ categorical: {}, numeric: {} });
@@ -72,6 +60,14 @@ export function toggleCategory(filters: FilterState, field: string, value: strin
   const next = cloneFilters(filters);
   const set = next.categorical[field] ?? new Set<string>();
   set.has(value) ? set.delete(value) : set.add(value);
+  next.categorical[field] = set;
+  return next;
+}
+
+export function addCategories(filters: FilterState, field: string, values: string[]): FilterState {
+  const next = cloneFilters(filters);
+  const set = next.categorical[field] ?? new Set<string>();
+  values.forEach((value) => set.add(value));
   next.categorical[field] = set;
   return next;
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import type { CellRecord, FilterState, FilterSummary } from '../types/cell';
-import { CATEGORICAL_FIELDS, NUMERIC_FIELDS, clearField, setNumericRange, toggleCategory } from '../data/filters';
+import { CATEGORICAL_FIELDS, NUMERIC_FIELDS, addCategories, clearField, setNumericRange, toggleCategory } from '../data/filters';
 import { histogram, numericSummary, formatNumber } from '../data/statistics';
 import { availableFields, topValues, valueLabel } from '../data/transformData';
 
@@ -10,10 +10,11 @@ type SidebarFiltersProps = {
   filteredCells: CellRecord[];
   filters: FilterState;
   summary?: FilterSummary | null;
+  facets?: FilterSummary | null;
   onFilters: (filters: FilterState) => void;
 };
 
-export function SidebarFilters({ cells, filteredCells, filters, summary, onFilters }: SidebarFiltersProps) {
+export function SidebarFilters({ cells, filteredCells, filters, summary, facets, onFilters }: SidebarFiltersProps) {
   const [selectedNumericBins, setSelectedNumericBins] = useState<Record<string, Set<string>>>({});
   const categoricalFields = useMemo(
     () => (summary ? CATEGORICAL_FIELDS.filter((field) => summary.categorical[field]) : availableFields(cells, CATEGORICAL_FIELDS)),
@@ -38,9 +39,10 @@ export function SidebarFilters({ cells, filteredCells, filters, summary, onFilte
             key={field}
             field={field}
             cells={cells}
-            summaryCounts={summary?.categorical[field]}
+            summaryCounts={facets?.categorical[field] ?? summary?.categorical[field]}
             selected={filters.categorical[field] ?? new Set()}
             onToggle={(value) => onFilters(toggleCategory(filters, field, value))}
+            onSelectMany={(values) => onFilters(addCategories(filters, field, values))}
             onClear={() => onFilters(clearField(filters, field))}
           />
         ))}
@@ -94,6 +96,7 @@ function CategoricalFilter({
   selected,
   summaryCounts,
   onToggle,
+  onSelectMany,
   onClear,
 }: {
   field: string;
@@ -101,9 +104,10 @@ function CategoricalFilter({
   selected: Set<string>;
   summaryCounts?: Array<{ label: string; count: number }>;
   onToggle: (value: string) => void;
+  onSelectMany: (values: string[]) => void;
   onClear: () => void;
 }) {
-  const [open, setOpen] = useState(['group', 'cell_type_merge', 'dataset'].includes(field));
+  const [open, setOpen] = useState(['Group', 'Major cell type', 'Cell subtype', 'Dataset'].includes(field));
   const [query, setQuery] = useState('');
   const counts = useMemo(() => summaryCounts ?? topValues(cells, field, 200), [cells, field, summaryCounts]);
   const max = counts[0]?.count ?? 1;
@@ -115,6 +119,25 @@ function CategoricalFilter({
       {open && (
         <div className="border-t border-line p-3">
           <input className="input mb-2 w-full" placeholder={`Search ${field}`} value={query} onChange={(event) => setQuery(event.target.value)} />
+          <div className="mb-2 grid grid-cols-[1fr_auto_auto] items-center gap-1.5 text-[11px]">
+            <span className="truncate text-slate-500">{selected.size > 0 ? `${selected.size} selected` : 'Multi-select'}</span>
+            <button
+              type="button"
+              className="rounded border border-line bg-white px-1.5 py-0.5 text-slate-600 transition hover:border-teal hover:text-teal disabled:opacity-40"
+              onClick={() => onSelectMany(visible.map((item) => item.label))}
+              disabled={visible.length === 0}
+            >
+              Select shown
+            </button>
+            <button
+              type="button"
+              className="rounded border border-line bg-white px-1.5 py-0.5 text-slate-600 transition hover:border-coral hover:text-coral disabled:opacity-40"
+              onClick={onClear}
+              disabled={selected.size === 0}
+            >
+              Clear
+            </button>
+          </div>
           <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
             {visible.map((item) => (
               <label key={item.label} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-panel">
@@ -160,7 +183,7 @@ function NumericFilter({
   ) => void;
   onClear: () => void;
 }) {
-  const [open, setOpen] = useState(['Age', 'SLEDAI', 'pct_counts_mt'].includes(field));
+  const [open, setOpen] = useState(['Age', 'SLEDAI'].includes(field));
   const [hoveredBin, setHoveredBin] = useState<{
     label: string;
     count: number;

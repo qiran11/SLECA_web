@@ -6,13 +6,21 @@ import { downloadCsv } from '../utils/download';
 
 type TableMode = 'sample' | 'patient';
 
-export function SamplePatientSummary({ cells }: { cells: CellRecord[] }) {
+export function SamplePatientSummary({
+  cells,
+  serverRows,
+  onMode,
+}: {
+  cells: CellRecord[];
+  serverRows?: Array<Record<string, string | number>> | null;
+  onMode?: (mode: TableMode) => void;
+}) {
   const [mode, setMode] = useState<TableMode>('sample');
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<string>('cell_count');
   const [sortAsc, setSortAsc] = useState(false);
   const rows = useMemo(() => summaryRows(cells, mode), [cells, mode]);
-  const tableRows = rows as unknown as Array<Record<string, string | number>>;
+  const tableRows = serverRows ?? (rows as unknown as Array<Record<string, string | number>>);
   const visibleRows = useMemo(() => {
     return tableRows
       .filter((row) => Object.values(row).join(' ').toLowerCase().includes(query.toLowerCase()))
@@ -33,7 +41,10 @@ export function SamplePatientSummary({ cells }: { cells: CellRecord[] }) {
               <button
                 key={item}
                 className={`rounded px-3 py-1.5 text-sm capitalize ${mode === item ? 'bg-teal text-white' : 'text-slate-600 hover:bg-panel'}`}
-                onClick={() => setMode(item)}
+                onClick={() => {
+                  setMode(item);
+                  onMode?.(item);
+                }}
               >
                 {item}
               </button>

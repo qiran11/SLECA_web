@@ -1,9 +1,10 @@
 import { X } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { CellRecord, FilterSummary } from '../types/cell';
-import { histogram, numericSummary, overviewStats, formatNumber } from '../data/statistics';
+import { histogram, overviewStats } from '../data/statistics';
 import { safeMetadataEntries, topValues } from '../data/transformData';
 import { patientAlias } from '../utils/anonymize';
+import { colorFor } from '../utils/colors';
 import { ChartCard } from './ChartCard';
 
 type MetadataPanelProps = {
@@ -22,7 +23,7 @@ export function MetadataPanel({ selectedCell, cells, aliases, summary, onClearSe
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">Selected Cell</div>
-            <div className="text-xs text-slate-500">{String(selectedCell.cell_id ?? 'Unknown')}</div>
+            <div className="text-xs text-slate-500">{String(selectedCell['Cell ID'] ?? selectedCell.cell_id ?? 'Unknown')}</div>
           </div>
           <button className="icon-button" onClick={onClearSelected} title="Clear selected cell">
             <X size={16} />
@@ -44,11 +45,10 @@ export function MetadataPanel({ selectedCell, cells, aliases, summary, onClearSe
   const stats = summary
     ? {
         cells: summary.filtered_rows,
-        samples: summary.unique.sample ?? 0,
-        patients: summary.unique.Patient_ID || summary.unique.Participant || 0,
+        samples: summary.unique.Sample ?? 0,
+        patients: summary.unique.Origin ?? 0,
       }
     : overviewStats(cells);
-  const qcFields = ['pct_counts_mt', 'total_counts', 'n_genes_by_counts'];
 
   return (
     <div className="space-y-4 p-4">
@@ -60,33 +60,15 @@ export function MetadataPanel({ selectedCell, cells, aliases, summary, onClearSe
       <div className="grid grid-cols-3 gap-2">
         <SmallMetric label="Cells" value={stats.cells} />
         <SmallMetric label="Samples" value={stats.samples} />
-        <SmallMetric label="Patients" value={stats.patients} />
+        <SmallMetric label="Origins" value={stats.patients} />
       </div>
 
-      <MiniBars title="Cell Types Top 10" data={(summary?.categorical.cell_type_merge ?? topValues(cells, 'cell_type_merge', 10)).slice(0, 10)} />
-      <MiniBars title="Group Distribution" data={(summary?.categorical.group ?? topValues(cells, 'group', 8)).slice(0, 8)} />
-      <MiniBars title="Dataset Distribution" data={(summary?.categorical.dataset ?? topValues(cells, 'dataset', 8)).slice(0, 8)} />
+      <MiniBars title="Cell Subtypes Top 10" data={(summary?.categorical['Cell subtype'] ?? topValues(cells, 'Cell subtype', 10)).slice(0, 10)} />
+      <MiniBars title="Major Cell Types" data={(summary?.categorical['Major cell type'] ?? topValues(cells, 'Major cell type', 8)).slice(0, 8)} />
+      <MiniBars title="Group Distribution" data={(summary?.categorical.Group ?? topValues(cells, 'Group', 8)).slice(0, 8)} />
+      <MiniBars title="Dataset Distribution" data={(summary?.categorical.Dataset ?? topValues(cells, 'Dataset', 8)).slice(0, 8)} />
       <MiniHistogram title="SLEDAI" cells={cells} field="SLEDAI" bins={summary?.numeric.SLEDAI?.bins} />
       <MiniHistogram title="Age" cells={cells} field="Age" bins={summary?.numeric.Age?.bins} />
-      <MiniHistogram title="mCLASI Activity" cells={cells} field="mCLASI_activity" bins={summary?.numeric.mCLASI_activity?.bins} />
-
-      <ChartCard title="QC Summary" dense>
-        <div className="space-y-2">
-          {qcFields.map((field) => {
-            const fieldSummary = summary?.numeric[field] ?? numericSummary(cells, field);
-            return (
-              <div key={field} className="rounded bg-panel p-2 text-xs">
-                <span className="font-medium">{field}</span>
-                <span className="ml-2 text-slate-600">
-                  {fieldSummary
-                    ? `min ${formatNumber(fieldSummary.min)} / mean ${formatNumber(fieldSummary.mean)} / max ${formatNumber(fieldSummary.max)}`
-                    : 'No numeric data'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </ChartCard>
     </div>
   );
 }
@@ -110,7 +92,11 @@ function MiniBars({ title, data }: { title: string; data: Array<{ label: string;
             <XAxis type="number" hide />
             <YAxis type="category" dataKey="label" width={96} tick={{ fontSize: 11 }} />
             <Tooltip />
-            <Bar dataKey="count" fill="#0f766e" radius={[0, 3, 3, 0]} />
+            <Bar dataKey="count" radius={[0, 3, 3, 0]}>
+              {data.map((entry) => (
+                <Cell key={entry.label} fill={colorFor(entry.label)} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -139,7 +125,7 @@ function MiniHistogram({
             <XAxis dataKey="label" hide />
             <YAxis hide />
             <Tooltip />
-            <Bar dataKey="count" fill="#b8860b" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="count" fill="#2563eb" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -45,10 +45,10 @@ export function formatNumber(value: number): string {
 export function overviewStats(cells: CellRecord[]) {
   return {
     cells: cells.length,
-    samples: uniqueCount(cells, 'sample'),
+    samples: uniqueCount(cells, 'Sample'),
     patients: new Set(cells.map(getPatientKey).filter((value) => value !== 'Unknown')).size,
-    datasets: uniqueCount(cells, 'dataset'),
-    cellTypes: uniqueCount(cells, 'cell_type_merge'),
+    datasets: uniqueCount(cells, 'Dataset'),
+    cellTypes: uniqueCount(cells, 'Cell subtype'),
     groups: groupCounts(cells),
   };
 }
@@ -56,7 +56,7 @@ export function overviewStats(cells: CellRecord[]) {
 export function groupCounts(cells: CellRecord[]) {
   const counts = new Map<string, number>();
   cells.forEach((cell) => {
-    const group = valueLabel(cell.group);
+    const group = valueLabel(cell.Group);
     counts.set(group, (counts.get(group) ?? 0) + 1);
   });
   return Array.from(counts, ([label, count]) => ({ label, count }));
@@ -72,38 +72,38 @@ export function summaryRows(cells: CellRecord[], field: 'sample' | 'patient') {
 
   return Array.from(groups, ([key, records], index) => {
     const first = records[0] ?? {};
-    const topCellTypes = topLocal(records, 'cell_type_merge', 3)
+    const topCellTypes = topLocal(records, 'Cell subtype', 3)
       .map((item) => item.label)
       .join(', ');
 
     if (field === 'patient') {
       return {
         id: key === 'Unknown' ? 'Unknown' : `P${String(index + 1).padStart(3, '0')}`,
-        group: valueLabel(first.group),
+        origin: valueLabel(first.Origin),
+        group: valueLabel(first.Group),
         cell_count: records.length,
-        n_samples: uniqueCount(records, 'sample'),
-        n_cell_types: uniqueCount(records, 'cell_type_merge'),
-        Age: valueLabel(first.Age ?? first.age),
-        sex: valueLabel(first.sex),
+        n_samples: uniqueCount(records, 'Sample'),
+        n_cell_types: uniqueCount(records, 'Cell subtype'),
+        Age: valueLabel(first.Age),
+        'Age group': valueLabel(first['Age group']),
+        Sex: valueLabel(first.Sex),
         SLEDAI: valueLabel(first.SLEDAI),
-        'SELENA-SLEDAI': valueLabel(first['SELENA-SLEDAI']),
-        'Years Since Diagnosis': valueLabel(first['Years Since Diagnosis']),
-        mCLASI_activity: valueLabel(first.mCLASI_activity),
-        mCLASI_damage: valueLabel(first.mCLASI_damage),
+        'SLEDAI source': valueLabel(first['SLEDAI source']),
       };
     }
 
     return {
       sample: key,
-      dataset: valueLabel(first.dataset),
-      group: valueLabel(first.group),
+      dataset: valueLabel(first.Dataset),
+      origin: valueLabel(first.Origin),
+      group: valueLabel(first.Group),
       cell_count: records.length,
-      n_cell_types: uniqueCount(records, 'cell_type_merge'),
+      n_cell_types: uniqueCount(records, 'Cell subtype'),
       top_cell_types: topCellTypes,
-      Age: valueLabel(first.Age ?? first.age),
-      sex: valueLabel(first.sex),
+      Age: valueLabel(first.Age),
+      'Age group': valueLabel(first['Age group']),
+      Sex: valueLabel(first.Sex),
       SLEDAI: valueLabel(first.SLEDAI),
-      mCLASI_activity: valueLabel(first.mCLASI_activity),
     };
   });
 }
