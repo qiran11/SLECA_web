@@ -108,7 +108,7 @@ export function UmapViewer({
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white px-4 py-3">
-        <div>
+        <div className="min-w-0">
           <div className="text-sm font-semibold">UMAP Viewer</div>
           <div className="text-xs text-slate-500">
             Showing {renderedCount.toLocaleString()} of {totalFiltered.toLocaleString()} filtered cells
@@ -122,6 +122,9 @@ export function UmapViewer({
               />
             </div>
           )}
+          {!loading && renderedCount > 0 && legendItems.length > 0 && (
+            <ColorLegend title={colorBy} items={legendItems} compact />
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Control label="Point size" value={pointSize} min={1} max={8} step={1} onChange={onPointSize} />
@@ -132,9 +135,6 @@ export function UmapViewer({
       <div className="relative min-h-[520px] flex-1">
         {loading && <CenterNote>Loading cells...</CenterNote>}
         {!loading && renderedCount === 0 && <CenterNote>No cells match the current filters.</CenterNote>}
-        {!loading && renderedCount > 0 && legendItems.length > 0 && (
-          <ColorLegend title={colorBy} items={legendItems} />
-        )}
         {!loading && renderedCount > 0 && denseMode && denseData && (
           <DenseUmapCanvas
             data={denseData}
@@ -171,18 +171,18 @@ export function UmapViewer({
   );
 }
 
-function ColorLegend({ title, items }: { title: string; items: CategoryCount[] }) {
+function ColorLegend({ title, items, compact = false }: { title: string; items: CategoryCount[]; compact?: boolean }) {
   return (
-    <div className="absolute left-4 top-4 z-10 max-w-[240px] rounded border border-line/80 bg-white/90 p-3 text-xs shadow-soft backdrop-blur">
-      <div className="mb-2 font-semibold text-ink">Color by {title}</div>
-      <div className="grid max-h-72 gap-1.5 overflow-auto pr-1">
+    <div className={`${compact ? 'mt-2 max-w-[720px]' : 'absolute left-4 top-4 z-10 max-w-[240px]'} rounded border border-line/80 bg-white/90 p-2 text-xs shadow-soft backdrop-blur`}>
+      <div className="mb-1.5 font-semibold text-ink">Color by {title}</div>
+      <div className={`${compact ? 'flex flex-wrap gap-x-3 gap-y-1' : 'grid max-h-72 gap-1.5 overflow-auto pr-1'}`}>
         {items.map((item) => (
-          <div key={item.label} className="flex min-w-0 items-center gap-2">
+          <div key={item.label} className="flex min-w-0 items-center gap-1.5">
             <span
               className="h-3 w-3 shrink-0 rounded-sm border border-slate-300"
               style={{ backgroundColor: colorFor(item.label) }}
             />
-            <span className="min-w-0 flex-1 truncate text-slate-700" title={item.label}>
+            <span className={`${compact ? 'max-w-[120px]' : 'min-w-0 flex-1'} truncate text-slate-700`} title={item.label}>
               {item.label}
             </span>
             <span className="shrink-0 tabular-nums text-slate-500">{compactCount(item.count)}</span>
