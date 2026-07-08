@@ -194,6 +194,11 @@ export default function App() {
 
   useEffect(() => {
     if (sourceKey !== 'parquet') return;
+    if (page === 'home') {
+      setLoading(false);
+      setError(null);
+      return;
+    }
 
     let ignore = false;
     setLoading(true);
@@ -337,10 +342,11 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, [filters, filtersKey, samplingMode, sourceKey]);
+  }, [filters, filtersKey, page, samplingMode, sourceKey]);
 
   useEffect(() => {
     if (sourceKey !== 'parquet' || samplingMode !== 'million' || !denseData) return;
+    if (page === 'home') return;
     if (denseData.loaded < denseData.target) return;
     if (denseColorField === colorBy) return;
 
@@ -395,10 +401,11 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, [colorBy, denseColorCache, denseColorField, denseData, filters, filtersKey, samplingMode, sourceKey]);
+  }, [colorBy, denseColorCache, denseColorField, denseData, filters, filtersKey, page, samplingMode, sourceKey]);
 
   useEffect(() => {
     if (sourceKey !== 'parquet' || samplingMode !== 'million') return;
+    if (page !== 'samples') return;
 
     let ignore = false;
     querySummaryRows(filters, summaryRowsMode)
@@ -412,7 +419,7 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, [filters, samplingMode, sourceKey, summaryRowsMode]);
+  }, [filters, page, samplingMode, sourceKey, summaryRowsMode]);
 
   const filteredCells = useMemo(() => (sourceKey === 'parquet' ? cells : applyFilters(cells, filters)), [cells, filters, sourceKey]);
   const displayedCells = useMemo(
