@@ -91,7 +91,7 @@ export function UmapViewer({
   const renderedCount = denseMode ? denseData?.loaded ?? 0 : plotData.valid.length;
   const legendItems = useMemo(() => {
     const fromSummary = legendCounts?.filter((item) => item.label && item.count > 0) ?? [];
-    if (fromSummary.length > 0) return fromSummary.slice(0, 12);
+    if (fromSummary.length > 0) return fromSummary;
 
     const counts = new Map<string, number>();
     for (const cell of cells) {
@@ -102,7 +102,6 @@ export function UmapViewer({
     return Array.from(counts.entries())
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 12);
   }, [cells, colorBy, legendCounts]);
 
   return (
@@ -174,15 +173,17 @@ export function UmapViewer({
 function ColorLegend({ title, items, compact = false }: { title: string; items: CategoryCount[]; compact?: boolean }) {
   return (
     <div className={`${compact ? 'mt-2 max-w-[720px]' : 'absolute left-4 top-4 z-10 max-w-[240px]'} rounded border border-line/80 bg-white/90 p-2 text-xs shadow-soft backdrop-blur`}>
-      <div className="mb-1.5 font-semibold text-ink">Color by {title}</div>
-      <div className={`${compact ? 'flex flex-wrap gap-x-3 gap-y-1' : 'grid max-h-72 gap-1.5 overflow-auto pr-1'}`}>
+      <div className="mb-1.5 font-semibold text-ink">
+        Color by {title} <span className="font-normal text-slate-500">({items.length})</span>
+      </div>
+      <div className={`${compact ? 'flex max-h-24 flex-wrap gap-x-3 gap-y-1 overflow-y-auto pr-1' : 'grid max-h-72 gap-1.5 overflow-auto pr-1'}`}>
         {items.map((item) => (
           <div key={item.label} className="flex min-w-0 items-center gap-1.5">
             <span
               className="h-3 w-3 shrink-0 rounded-sm border border-slate-300"
               style={{ backgroundColor: colorFor(item.label) }}
             />
-            <span className={`${compact ? 'max-w-[120px]' : 'min-w-0 flex-1'} truncate text-slate-700`} title={item.label}>
+            <span className={`${compact ? 'max-w-[150px]' : 'min-w-0 flex-1'} truncate text-slate-700`} title={item.label}>
               {item.label}
             </span>
             <span className="shrink-0 tabular-nums text-slate-500">{compactCount(item.count)}</span>
