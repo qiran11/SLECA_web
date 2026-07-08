@@ -5,6 +5,7 @@ import type { CellRecord, DenseUmapData } from '../types/cell';
 import { numericValue } from '../data/filters';
 import { valueLabel } from '../data/transformData';
 import { colorFor } from '../utils/colors';
+import type { CategoryCount } from '../types/cell';
 
 type UmapViewerProps = {
   cells: CellRecord[];
@@ -16,6 +17,7 @@ type UmapViewerProps = {
   aliases: Map<string, string>;
   denseMode?: boolean;
   denseData?: DenseUmapData | null;
+  legendCounts?: CategoryCount[] | null;
   batchProgress?: { loaded: number; target: number } | null;
   onPointSize: (value: number) => void;
   onOpacity: (value: number) => void;
@@ -49,6 +51,7 @@ export function UmapViewer({
   aliases,
   denseMode = false,
   denseData,
+  legendCounts,
   batchProgress,
   onPointSize,
   onOpacity,
@@ -86,6 +89,21 @@ export function UmapViewer({
   }, [aliases, cells, colorBy, denseMode, numericColor, opacity, pointSize]);
 
   const renderedCount = denseMode ? denseData?.loaded ?? 0 : plotData.valid.length;
+  const legendItems = useMemo(() => {
+    const fromSummary = legendCounts?.filter((item) => item.label && item.count > 0) ?? [];
+    if (fromSummary.length > 0) return fromSummary.slice(0, 12);
+
+    const counts = new Map<string, number>();
+    for (const cell of cells) {
+      const label = valueLabel(cell[colorBy]);
+      if (!label) continue;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+  }, [cells, colorBy, legendCounts]);
 
   return (
     <div className="flex h-full flex-col">
@@ -114,6 +132,9 @@ export function UmapViewer({
       <div className="relative min-h-[520px] flex-1">
         {loading && <CenterNote>Loading cells...</CenterNote>}
         {!loading && renderedCount === 0 && <CenterNote>No cells match the current filters.</CenterNote>}
+        {!loading && renderedCount > 0 && legendItems.length > 0 && (
+          <ColorLegend title={colorBy} items={legendItems} />
+        )}
         {!loading && renderedCount > 0 && denseMode && denseData && (
           <DenseUmapCanvas
             data={denseData}
@@ -148,6 +169,34 @@ export function UmapViewer({
       </div>
     </div>
   );
+}
+
+function ColorLegend({ title, items }: { title: string; items: CategoryCount[] }) {
+  return (
+    <div className="absolute left-4 top-4 z-10 max-w-[240px] rounded border border-line/80 bg-white/90 p-3 text-xs shadow-soft backdrop-blur">
+      <div className="mb-2 font-semibold text-ink">Color by {title}</div>
+      <div className="grid max-h-72 gap-1.5 overflow-auto pr-1">
+        {items.map((item) => (
+          <div key={item.label} className="flex min-w-0 items-center gap-2">
+            <span
+              className="h-3 w-3 shrink-0 rounded-sm border border-slate-300"
+              style={{ backgroundColor: colorFor(item.label) }}
+            />
+            <span className="min-w-0 flex-1 truncate text-slate-700" title={item.label}>
+              {item.label}
+            </span>
+            <span className="shrink-0 tabular-nums text-slate-500">{compactCount(item.count)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function compactCount(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 10_000) return `${Math.round(value / 1000)}k`;
+  return value.toLocaleString();
 }
 
 function Control({

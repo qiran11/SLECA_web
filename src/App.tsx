@@ -517,6 +517,7 @@ export default function App() {
               aliases={patientAliases}
               denseMode={samplingMode === 'million'}
               denseData={denseData}
+              legendCounts={samplingMode === 'million' ? filterSummary?.categorical[colorBy] : null}
               batchProgress={batchProgress}
               onPointSize={setPointSize}
               onOpacity={setOpacity}
