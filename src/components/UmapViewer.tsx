@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Plot from 'react-plotly.js';
 import { SlidersHorizontal } from 'lucide-react';
 import type { CellRecord, DenseUmapData } from '../types/cell';
-import { numericValue } from '../data/filters';
+import { NUMERIC_FIELDS, numericValue } from '../data/filters';
 import { valueLabel } from '../data/transformData';
 import { colorFor } from '../utils/colors';
 import type { CategoryCount } from '../types/cell';
@@ -57,7 +57,7 @@ export function UmapViewer({
   onOpacity,
   onSelectCell,
 }: UmapViewerProps) {
-  const numericColor = cells.some((cell) => numericValue(cell[colorBy]) !== null);
+  const numericColor = NUMERIC_FIELDS.includes(colorBy) && cells.some((cell) => numericValue(cell[colorBy]) !== null);
   const plotData = useMemo(() => {
     const valid = cells.filter((cell) => numericValue(cell.UMAP_1) !== null && numericValue(cell.UMAP_2) !== null);
     const markerColor = denseMode
@@ -106,34 +106,38 @@ export function UmapViewer({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-white px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold">UMAP Viewer</div>
-          <div className="text-xs text-slate-500">
-            Showing {renderedCount.toLocaleString()} of {totalFiltered.toLocaleString()} filtered cells
-            {denseMode ? ' - batched WebGL mode' : ''}
+      <div className="border-b border-line bg-white px-4 py-3">
+        <div className="flex min-h-[56px] items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">UMAP Viewer</div>
+            <div className="text-xs text-slate-500">
+              Showing {renderedCount.toLocaleString()} of {totalFiltered.toLocaleString()} filtered cells
+              {denseMode ? ' - batched WebGL mode' : ''}
+            </div>
+            {batchProgress && (
+              <div className="mt-2 h-1.5 w-72 overflow-hidden rounded bg-slate-200">
+                <div
+                  className="h-full rounded bg-teal"
+                  style={{ width: `${Math.min(100, (batchProgress.loaded / Math.max(batchProgress.target, 1)) * 100)}%` }}
+                />
+              </div>
+            )}
           </div>
-          {batchProgress && (
-            <div className="mt-2 h-1.5 w-72 overflow-hidden rounded bg-slate-200">
-              <div
-                className="h-full rounded bg-teal"
-                style={{ width: `${Math.min(100, (batchProgress.loaded / Math.max(batchProgress.target, 1)) * 100)}%` }}
-              />
+          {!loading && renderedCount > 0 && (
+            <div className="flex shrink-0 flex-wrap items-end justify-end gap-3 self-end pb-1">
+              <Control label="Point size" value={pointSize} min={1} max={8} step={1} onChange={onPointSize} />
+              <Control label="Opacity" value={opacity} min={0.1} max={1} step={0.05} onChange={onOpacity} />
             </div>
           )}
-          {!loading && renderedCount > 0 && legendItems.length > 0 && (
-            <ColorLegend title={colorBy} items={legendItems} compact />
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Control label="Point size" value={pointSize} min={1} max={8} step={1} onChange={onPointSize} />
-          <Control label="Opacity" value={opacity} min={0.1} max={1} step={0.05} onChange={onOpacity} />
         </div>
       </div>
 
       <div className="relative min-h-[520px] flex-1">
         {loading && <CenterNote>Loading cells...</CenterNote>}
         {!loading && renderedCount === 0 && <CenterNote>No cells match the current filters.</CenterNote>}
+        {!loading && renderedCount > 0 && legendItems.length > 0 && (
+          <ColorLegend title={colorBy} items={legendItems} />
+        )}
         {!loading && renderedCount > 0 && denseMode && denseData && (
           <DenseUmapCanvas
             data={denseData}
@@ -171,8 +175,12 @@ export function UmapViewer({
 }
 
 function ColorLegend({ title, items, compact = false }: { title: string; items: CategoryCount[]; compact?: boolean }) {
+  const containerClass = compact
+    ? 'mt-2 max-w-[720px]'
+    : 'absolute left-24 top-4 z-20 w-[180px] max-w-[calc(100%-7rem)]';
+
   return (
-    <div className={`${compact ? 'mt-2 max-w-[720px]' : 'absolute left-4 top-4 z-10 max-w-[240px]'} rounded border border-line/80 bg-white/90 p-2 text-xs shadow-soft backdrop-blur`}>
+    <div className={`${containerClass} rounded border border-line/80 bg-white/90 p-2 text-xs shadow-soft backdrop-blur`}>
       <div className="mb-1.5 font-semibold text-ink">
         Color by {title} <span className="font-normal text-slate-500">({items.length})</span>
       </div>

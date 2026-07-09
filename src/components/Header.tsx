@@ -1,5 +1,5 @@
 import { Download, RotateCcw } from 'lucide-react';
-import type { CellRecord, DataSource } from '../types/cell';
+import type { CellRecord, DataSource, SamplingMode } from '../types/cell';
 import { downloadCells } from '../utils/download';
 
 type HeaderProps = {
@@ -8,10 +8,12 @@ type HeaderProps = {
   filteredCells: number;
   colorBy: string;
   colorFields: string[];
+  samplingMode: SamplingMode;
   filteredRows: CellRecord[];
   aliases: Map<string, string>;
   compact?: boolean;
   onColorBy: (field: string) => void;
+  onSamplingMode: (mode: SamplingMode) => void;
   onReset: () => void;
 };
 
@@ -21,10 +23,12 @@ export function Header({
   filteredCells,
   colorBy,
   colorFields,
+  samplingMode,
   filteredRows,
   aliases,
   compact = false,
   onColorBy,
+  onSamplingMode,
   onReset,
 }: HeaderProps) {
   return (
@@ -48,6 +52,33 @@ export function Header({
               </option>
             ))}
           </select>
+
+          {source.key === 'parquet' && (
+            <div className="flex overflow-hidden rounded border border-line bg-white">
+              <button
+                type="button"
+                className={`px-3 py-2 text-sm transition ${
+                  samplingMode === 'sample100k'
+                    ? 'bg-teal text-white'
+                    : 'text-slate-600 hover:bg-panel hover:text-ink'
+                }`}
+                onClick={() => onSamplingMode('sample100k')}
+              >
+                100k sample
+              </button>
+              <button
+                type="button"
+                className={`border-l border-line px-3 py-2 text-sm transition ${
+                  samplingMode === 'million'
+                    ? 'bg-teal text-white'
+                    : 'text-slate-600 hover:bg-panel hover:text-ink'
+                }`}
+                onClick={() => onSamplingMode('million')}
+              >
+                All cells
+              </button>
+            </div>
+          )}
 
           <button className="icon-button" onClick={onReset} title="Reset filters">
             <RotateCcw size={17} />

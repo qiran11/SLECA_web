@@ -3,7 +3,6 @@ import { Activity, BarChart3, CircleDot, Database, Download, ExternalLink, Searc
 
 const ZENODO_RECORD_ID = '19467523';
 const ZENODO_RECORD_URL = `https://zenodo.org/records/${ZENODO_RECORD_ID}`;
-const DATA_ALL_URL = `https://zenodo.org/api/records/${ZENODO_RECORD_ID}/files-archive`;
 const ATLAS_STATS = {
   datasets: 8,
   cells: 1_938_325,
@@ -136,11 +135,10 @@ export function DatasetLanding({ onNavigate }: { onNavigate: (page: 'browser' | 
               <NavButton label="Cell Types" icon={Users} onClick={() => onNavigate('cellTypes')} />
               <NavButton label="Samples" icon={Table2} onClick={() => onNavigate('samples')} />
             </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <a className="button" href={DATA_ALL_URL} target="_blank" rel="noreferrer">
-                <Download size={16} />
-                Download All Data
-              </a>
+            <p className="mt-5 max-w-3xl text-sm leading-6 text-slate-600">
+              The complete processed data files are hosted in the Zenodo record. Use the record page for citation and metadata, or download individual dataset files from the table below.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
               <a className="icon-button w-auto px-3" href="https://zenodo.org/records/19467523" target="_blank" rel="noreferrer">
                 <ExternalLink size={16} />
                 Record

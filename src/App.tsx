@@ -133,8 +133,9 @@ export default function App() {
   const [colorBy, setColorBy] = useState('Cell subtype');
   const [pointSize, setPointSize] = useState(3);
   const [opacity, setOpacity] = useState(0.75);
-  const [samplingMode, setSamplingMode] = useState<SamplingMode>('million');
+  const [samplingMode, setSamplingMode] = useState<SamplingMode>('sample100k');
   const [page, setPage] = useState<Page>('home');
+  const [dataActivated, setDataActivated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [serverTotalRows, setServerTotalRows] = useState<number | null>(null);
@@ -149,6 +150,10 @@ export default function App() {
   const [denseColorCache, setDenseColorCache] = useState<Record<string, Float32Array>>({});
   const [denseColorField, setDenseColorField] = useState<string | null>(null);
   const filtersKey = useMemo(() => serializeFilters(filters), [filters]);
+
+  useEffect(() => {
+    if (page !== 'home') setDataActivated(true);
+  }, [page]);
 
   useEffect(() => {
     let ignore = false;
@@ -194,7 +199,7 @@ export default function App() {
 
   useEffect(() => {
     if (sourceKey !== 'parquet') return;
-    if (page === 'home') {
+    if (!dataActivated) {
       setLoading(false);
       setError(null);
       return;
@@ -342,11 +347,11 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, [filters, filtersKey, page, samplingMode, sourceKey]);
+  }, [dataActivated, filters, filtersKey, samplingMode, sourceKey]);
 
   useEffect(() => {
     if (sourceKey !== 'parquet' || samplingMode !== 'million' || !denseData) return;
-    if (page === 'home') return;
+    if (!dataActivated) return;
     if (denseData.loaded < denseData.target) return;
     if (denseColorField === colorBy) return;
 
@@ -401,7 +406,7 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, [colorBy, denseColorCache, denseColorField, denseData, filters, filtersKey, page, samplingMode, sourceKey]);
+  }, [colorBy, dataActivated, denseColorCache, denseColorField, denseData, filters, filtersKey, samplingMode, sourceKey]);
 
   useEffect(() => {
     if (sourceKey !== 'parquet' || samplingMode !== 'million') return;
@@ -432,6 +437,7 @@ export default function App() {
     [cells, samplingMode, sourceKey],
   );
   const source = getDataSource(sourceKey);
+  const loadedCellCount = samplingMode === 'million' ? denseData?.loaded ?? 0 : cells.length;
 
   const resetFilters = () => {
     setFilters(emptyFilters());
@@ -456,11 +462,13 @@ export default function App() {
     <div className="min-h-screen bg-[#eef3f1] text-ink">
       <Header
         source={source}
-        totalCells={serverTotalRows ?? cells.length}
+        totalCells={loadedCellCount}
         filteredCells={serverFilteredRows ?? filteredCells.length}
         colorBy={colorBy}
         colorFields={colorFields}
+        samplingMode={samplingMode}
         onColorBy={setColorBy}
+        onSamplingMode={setSamplingMode}
         onReset={resetFilters}
         filteredRows={filteredCells}
         aliases={patientAliases}

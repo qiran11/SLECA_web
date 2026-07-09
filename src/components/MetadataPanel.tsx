@@ -125,10 +125,20 @@ function MiniHistogram({
             <XAxis dataKey="label" hide />
             <YAxis hide />
             <Tooltip />
-            <Bar dataKey="count" fill="#2563eb" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+              {data.map((entry, index) => (
+                <Cell key={`${entry.label}-${index}`} fill={numericColor(index, data.length)} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
     </ChartCard>
   );
+}
+
+function numericColor(index: number, total: number) {
+  const colors = ['#dbeafe', '#93c5fd', '#3b82f6', '#1d4ed8', '#1e3a8a'];
+  const bucket = Math.min(colors.length - 1, Math.floor((index / Math.max(total - 1, 1)) * colors.length));
+  return colors[bucket];
 }

@@ -397,8 +397,59 @@ def chunk_or_sample(frame: pd.DataFrame, request: QueryRequest) -> pd.DataFrame:
     if len(frame) <= limit:
         return frame
 
+    if "Sample" in frame.columns:
+        return stratified_sample(frame, limit, "Sample")
+
     step = max(1, len(frame) // limit)
     return frame.iloc[::step].head(limit)
+
+
+def stratified_sample(frame: pd.DataFrame, limit: int, column: str) -> pd.DataFrame:
+    labels = frame[column].astype("string").fillna(UNKNOWN)
+    counts = labels.value_counts(sort=False, dropna=False)
+    if counts.empty:
+        return frame.head(0)
+
+    if len(counts) > limit:
+        pieces = []
+        for _, group in frame.groupby(labels, sort=False, dropna=False):
+            pieces.append(group.head(1))
+            if len(pieces) >= limit:
+                break
+        return pd.concat(pieces).sort_index()
+
+    allocations = {label: 1 for label in counts.index}
+    remaining = limit - len(counts)
+    total_capacity = int((counts - 1).clip(lower=0).sum())
+    fractions = []
+    for label, count in counts.items():
+        capacity = max(0, int(count) - 1)
+        if remaining <= 0 or capacity == 0 or total_capacity == 0:
+            fractions.append((0.0, capacity, label))
+            continue
+        raw_extra = (capacity / total_capacity) * remaining
+        extra = min(capacity, int(np.floor(raw_extra)))
+        allocations[label] += extra
+        fractions.append((raw_extra - np.floor(raw_extra), capacity, label))
+
+    allocated = sum(allocations.values())
+    for _, _, label in sorted(fractions, reverse=True):
+        if allocated >= limit:
+            break
+        if allocations[label] < int(counts[label]):
+            allocations[label] += 1
+            allocated += 1
+
+    pieces = []
+    for label, group in frame.groupby(labels, sort=False, dropna=False):
+        take = min(allocations[label], len(group))
+        if take >= len(group):
+            pieces.append(group)
+            continue
+        indices = np.linspace(0, len(group) - 1, take, dtype=int)
+        pieces.append(group.iloc[indices])
+
+    return pd.concat(pieces).sort_index().head(limit)
 
 
 def light_frame(frame: pd.DataFrame, requested_columns: list[str] | None = None) -> pd.DataFrame:

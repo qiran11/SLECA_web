@@ -81,18 +81,13 @@ Use the header data source selector:
 - `Compressed CSV`: loads `cell_metadata_umap.csv.gz`
 - `Parquet API`: loads `cell_metadata_umap.parquet` through `http://127.0.0.1:8000`
 
-If the browser becomes slow on full data, use the sampling selector in the header:
+The production app loads a 100k-cell sample by default to keep small servers responsive. For parquet-backed data, the API samples within each `Sample` group so each sample is represented whenever the filtered sample count is at most 100k. Users can switch between `100k sample` and `All cells` in the header.
 
-- Preview mode
-- Sample 100k cells
-- Sample 300k cells
-- Max 300k render
-
-Filtering still runs on the loaded rows; sampling controls how many points are drawn in the WebGL UMAP.
+Filtering still runs against the full parquet table; the 100k sample controls how many points are drawn in the UMAP.
 
 ## Parquet Notes
 
-The production path uses FastAPI plus pandas/pyarrow to read parquet server-side. Browser-side parquet reading was avoided because WASM parquet engines add startup cost and still put memory pressure on the user browser. The API applies filters against the full parquet table and returns a sampled result set for UMAP rendering, plus exact total and filtered row counts.
+The production path uses FastAPI plus pandas/pyarrow to read parquet server-side. Browser-side parquet reading was avoided because WASM parquet engines add startup cost and still put memory pressure on the user browser. The API applies filters against the full parquet table and returns a 100k stratified sample for the default UMAP rendering, plus exact total and filtered row counts. The `All cells` mode uses batched dense UMAP requests.
 
 For performance, `/api/cells/query` returns a lightweight row shape for UMAP rendering rather than every metadata column. A clicked cell's full metadata is loaded on demand from `/api/cells/{cell_id}`.
 
@@ -113,7 +108,7 @@ The current production parquet should contain these display fields:
 - `Major cell type`
 - `Cell subtype`
 
-`All cells batched` is an experimental dense UMAP mode. It uses `/api/umap/dense`, which returns column-oriented arrays (`x`, `y`, `cell_id`) in 50k-point chunks. The frontend writes those chunks into a preallocated `Float32Array` and renders points with a native WebGL canvas instead of Plotly or React row objects. It progressively appends all filtered cells and is intended for inspecting the global UMAP shape; hover richness, dashboards, and sidebar summaries remain better suited to the 100k/300k modes.
+`All cells batched` uses `/api/umap/dense`, which returns column-oriented arrays (`x`, `y`, `cell_id`) in 50k-point chunks. The frontend writes those chunks into a preallocated `Float32Array` and renders points with a native WebGL canvas instead of Plotly or React row objects. It progressively appends all filtered cells and is intended for inspecting the global UMAP shape; hover richness, dashboards, and sidebar summaries remain better suited to the 100k mode.
 
 ## Privacy Defaults
 
