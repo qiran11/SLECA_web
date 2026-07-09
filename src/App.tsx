@@ -477,9 +477,9 @@ export default function App() {
 
       {page !== 'home' && (
         <div className="border-b border-line bg-white">
-          <div className="mx-auto flex max-w-[1800px] gap-1 px-4">
+          <div className="mx-auto flex max-w-[1800px] gap-1 overflow-x-auto px-4">
             <button
-              className="flex items-center gap-2 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-ink"
+              className="flex shrink-0 items-center gap-2 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-ink"
               onClick={() => setPage('home')}
             >
               <Home size={17} />
@@ -488,7 +488,7 @@ export default function App() {
             {navItems.map(({ page: itemPage, label, icon: Icon }) => (
               <button
                 key={itemPage}
-                className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition ${
+                className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition ${
                   page === itemPage
                     ? 'border-teal text-teal'
                     : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-ink'

@@ -34,18 +34,18 @@ export function Header({
   return (
     <header className="border-b border-line bg-white">
       <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-normal text-ink">SLE Single-cell Atlas Browser</h1>
           <p className="text-sm text-slate-600">Interactive visualization of cell metadata, clinical annotations, and UMAP embeddings.</p>
         </div>
 
         {!compact && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center gap-2 max-sm:w-full">
           <Metric label="File" value={source.fileName} />
           <Metric label="Loaded" value={totalCells.toLocaleString()} />
           <Metric label="Filtered" value={filteredCells.toLocaleString()} />
 
-          <select className="control min-w-[150px]" value={colorBy} onChange={(event) => onColorBy(event.target.value)}>
+          <select className="control min-w-[150px] max-sm:w-full" value={colorBy} onChange={(event) => onColorBy(event.target.value)}>
             {colorFields.map((field) => (
               <option key={field} value={field}>
                 Color by {field}
@@ -54,10 +54,10 @@ export function Header({
           </select>
 
           {source.key === 'parquet' && (
-            <div className="flex overflow-hidden rounded border border-line bg-white">
+            <div className="flex overflow-hidden rounded border border-line bg-white max-sm:w-full">
               <button
                 type="button"
-                className={`px-3 py-2 text-sm transition ${
+                className={`px-3 py-2 text-sm transition max-sm:flex-1 ${
                   samplingMode === 'sample100k'
                     ? 'bg-teal text-white'
                     : 'text-slate-600 hover:bg-panel hover:text-ink'
@@ -68,7 +68,7 @@ export function Header({
               </button>
               <button
                 type="button"
-                className={`border-l border-line px-3 py-2 text-sm transition ${
+                className={`border-l border-line px-3 py-2 text-sm transition max-sm:flex-1 ${
                   samplingMode === 'million'
                     ? 'bg-teal text-white'
                     : 'text-slate-600 hover:bg-panel hover:text-ink'
@@ -83,7 +83,7 @@ export function Header({
           <button className="icon-button" onClick={onReset} title="Reset filters">
             <RotateCcw size={17} />
           </button>
-          <button className="button" onClick={() => downloadCells(filteredRows, aliases)} disabled={!filteredRows.length}>
+          <button className="button max-sm:flex-1 max-sm:justify-center" onClick={() => downloadCells(filteredRows, aliases)} disabled={!filteredRows.length}>
             <Download size={16} />
             Download Filtered CSV
           </button>
@@ -96,7 +96,7 @@ export function Header({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-line bg-panel px-3 py-1.5">
+    <div className="rounded border border-line bg-panel px-3 py-1.5 max-sm:flex-1">
       <div className="text-[11px] uppercase text-slate-500">{label}</div>
       <div className="max-w-[170px] truncate text-sm font-semibold">{value}</div>
     </div>

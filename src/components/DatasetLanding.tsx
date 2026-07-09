@@ -116,7 +116,7 @@ export function DatasetLanding({ onNavigate }: { onNavigate: (page: 'browser' | 
         <div className="absolute inset-0 opacity-90">
           <div className="h-full w-full bg-[radial-gradient(circle_at_18%_18%,rgba(37,99,235,0.16),transparent_26%),radial-gradient(circle_at_72%_28%,rgba(217,119,6,0.18),transparent_24%),radial-gradient(circle_at_68%_82%,rgba(15,118,110,0.18),transparent_26%)]" />
         </div>
-        <div className="relative grid min-h-[560px] grid-cols-[1.05fr_0.95fr] items-center gap-8 px-10 py-10 max-lg:grid-cols-1 max-md:px-5">
+        <div className="relative grid min-h-[560px] grid-cols-[1.05fr_0.95fr] items-center gap-8 px-10 py-10 max-lg:grid-cols-1 max-md:px-5 max-sm:py-6">
           <div className="max-w-4xl">
             <div className="mb-3 inline-flex items-center gap-2 rounded border border-teal/30 bg-white/80 px-3 py-1 text-sm font-medium text-teal">
               <Database size={16} />
@@ -146,7 +146,7 @@ export function DatasetLanding({ onNavigate }: { onNavigate: (page: 'browser' | 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <HeroMetric label="Datasets" value={ATLAS_STATS.datasets.toLocaleString()} />
             <HeroMetric label="Cells" value={ATLAS_STATS.cells.toLocaleString()} />
             <HeroMetric label="Cell Types" value={ATLAS_STATS.cellTypes.toLocaleString()} />
@@ -163,7 +163,7 @@ export function DatasetLanding({ onNavigate }: { onNavigate: (page: 'browser' | 
           </div>
           <label className="flex items-center gap-2 rounded border border-line px-2">
             <Search size={15} className="text-slate-500" />
-            <input className="h-8 w-64 outline-none" placeholder="Search GEO, origin, title" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input className="h-8 w-64 max-sm:w-full outline-none" placeholder="Search GEO, origin, title" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
         </div>
 
@@ -218,7 +218,8 @@ function HeroMetric({ label, value }: { label: string; value: string }) {
 function NavButton({ label, icon: Icon, onClick }: { label: string; icon: typeof CircleDot; onClick: () => void }) {
   return (
     <button
-      className="flex h-20 flex-col items-center justify-center gap-2 rounded border border-line bg-white/90 px-3 text-sm font-semibold text-ink shadow-soft transition hover:border-teal hover:text-teal"
+      type="button"
+      className="flex h-20 touch-manipulation flex-col items-center justify-center gap-2 rounded border border-line bg-white/90 px-3 text-sm font-semibold text-ink shadow-soft transition hover:border-teal hover:text-teal"
       onClick={onClick}
     >
       <Icon size={22} />
