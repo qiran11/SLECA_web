@@ -115,11 +115,16 @@ export function UmapViewer({
               {denseMode ? ' - batched WebGL mode' : ''}
             </div>
             {batchProgress && (
-              <div className="mt-2 h-1.5 w-72 overflow-hidden rounded bg-slate-200">
-                <div
-                  className="h-full rounded bg-teal"
-                  style={{ width: `${Math.min(100, (batchProgress.loaded / Math.max(batchProgress.target, 1)) * 100)}%` }}
-                />
+              <div className="mt-2">
+                {batchProgress.loaded < batchProgress.target && (
+                  <div className="mb-1 text-xs text-slate-500">Loading all cells may take a while. Please be patient.</div>
+                )}
+                <div className="h-1.5 w-72 overflow-hidden rounded bg-slate-200">
+                  <div
+                    className="h-full rounded bg-teal"
+                    style={{ width: `${Math.min(100, (batchProgress.loaded / Math.max(batchProgress.target, 1)) * 100)}%` }}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -133,7 +138,7 @@ export function UmapViewer({
       </div>
 
       <div className="relative min-h-[520px] flex-1">
-        {loading && <CenterNote>Loading cells...</CenterNote>}
+        {loading && <CenterNote>Loading cells... Large dataset, please be patient.</CenterNote>}
         {!loading && renderedCount === 0 && <CenterNote>No cells match the current filters.</CenterNote>}
         {!loading && renderedCount > 0 && legendItems.length > 0 && (
           <ColorLegend title={colorBy} items={legendItems} />
